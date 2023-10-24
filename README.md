@@ -3,13 +3,18 @@
 Links: 
 Drone construction guide: https://www.brokking.net/ymfc-al_main.html  
 
-149 Part Checkout: https://docs.google.com/spreadsheets/d/1Bz1YIEwWmc2XcUH2Z1pXMXEvFyvBWZiJ78gy9sDLGXI/edit#gid=0&range=A50:A52  
+149 Part Checkout: https://docs.google.com/spreadsheets/d/1Bz1YIEwWmc2XcUH2Z1pXMXEvFyvBWZiJ78gy9sDLGXI/edit#
 
 Proposal Doc: https://docs.google.com/document/d/1jsfoBy7dJqcI1VUTb40JnPD3tMkyC29lHxZ-uyRWZ1Q/edit  
 
 Ideas:  
-- ADAS
-- 3rd person drone
-- build a car
-- flight controller in drone
-- guitar playing robot
+- Drone Based:
+  - 3rd person drone
+  - flight controller in drone
+- Car based:
+  - line following robot
+  - drawing robot
+  - ADAS bot
+- Non Vehicle:
+  - guitar playing robot
+  - voice transcriber
