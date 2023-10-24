@@ -7,3 +7,9 @@ Drone construction guide: https://www.brokking.net/ymfc-al_main.html
 
 Proposal Doc: https://docs.google.com/document/d/1jsfoBy7dJqcI1VUTb40JnPD3tMkyC29lHxZ-uyRWZ1Q/edit  
 
+Ideas:  
+- ADAS
+- 3rd person drone
+- build a car
+- flight controller in drone
+- guitar playing robot
