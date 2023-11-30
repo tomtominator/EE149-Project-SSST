@@ -15,10 +15,10 @@ void setup() {
 }
 
 void loop() {
-  esc1.writeMicroseconds(2000);
-  esc2.writeMicroseconds(2000);
-  esc3.writeMicroseconds(2000);
-  esc4.writeMicroseconds(2000);
+  esc1.writeMicroseconds(1050);
+  esc2.writeMicroseconds(1050);
+  esc3.writeMicroseconds(1050);
+  esc4.writeMicroseconds(1050);
   delay(5000);  // Run at full speed for 5 seconds
 
   // Stop the motor
@@ -26,7 +26,7 @@ void loop() {
   esc2.writeMicroseconds(1000);
   esc3.writeMicroseconds(1000);
   esc4.writeMicroseconds(1000);
-  delay(5000); // Send signal to ESC.
+  delay(10000); // Send signal to ESC.
 }
 
 //
