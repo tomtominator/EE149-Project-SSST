@@ -1,74 +1,121 @@
-#include "mpu9250.h"
+#include "FastIMU.h"
+#include <Wire.h>
 
-bfs::Mpu9250 imu;
+#define IMU_ADDRESS 0x68    //Change to the address of the IMU
+#define PERFORM_CALIBRATION //Comment to disable startup calibration
+MPU6050 IMU;               //Change to the name of any supported IMU! 
+
+// Currently supported IMUS: MPU9255 MPU9250 MPU6886 MPU6500 MPU6050 ICM20689 ICM20690 BMI055 BMX055 BMI160 LSM6DS3 LSM6DSL
+
+calData calib = { 0 };  //Calibration data
+AccelData accelData;    //Sensor data
+GyroData gyroData;
+MagData magData;
 
 void setup() {
-  /* Serial to display data */
-  Serial.begin(115200);
-  while(!Serial) {}
-  
-  /* Start the I2C bus */
   Wire.begin();
-  Wire.setClock(400000);
-  
-  /* I2C bus,  0x68 address */
-  imu.Config(&Wire, bfs::Mpu9250::I2C_ADDR_PRIM);
-  //I2C_ADDR_PRIM (0x68) if AD0 pin grounded
-  //I2C_ADDR_SEC (0x69) if AD0 pin high
-  
-  /* Initialize and configure IMU */
-  if (!imu.Begin()) {
-    Serial.println("Error initializing communication with IMU");
-    while(1) {}
-  }
-  
-  /* Set the sample rate divider */
-  if (!imu.ConfigSrd(19)) {
-    Serial.println("Error configuring SRD");
-    while(1) {}
+  Wire.setClock(400000); //400khz clock
+  Serial.begin(115200);
+  while (!Serial) {
+    ;
   }
 
-  // added the config below jic, should be default regardless
-  if (!imu.ConfigAccelRange(bfs::Mpu9250::ACCEL_RANGE_16G);) {
-    Serial.println("Error configuring accelrange");
-    while(1) {}
+  int err = IMU.init(calib, IMU_ADDRESS);
+  if (err != 0) {
+    Serial.print("Error initializing IMU: ");
+    Serial.println(err);
+    while (true) {
+      ;
+    }
   }
-  if (!imu.ConfigGyroRange(bfs::Mpu9250::GYRO_RANGE_2000DPS) {   
-    Serial.println("Error configuring gyrorange");
-    while(1) {}
+  
+#ifdef PERFORM_CALIBRATION
+  Serial.println("FastIMU calibration & data example");
+  if (IMU.hasMagnetometer()) {
+    delay(1000);
+    Serial.println("Move IMU in figure 8 pattern until done.");
+    delay(3000);
+    IMU.calibrateMag(&calib);
+    Serial.println("Magnetic calibration done!");
+  }
+  else {
+    delay(5000);
   }
 
-} 
+  delay(5000);
+  Serial.println("Keep IMU level.");
+  delay(5000);
+  IMU.calibrateAccelGyro(&calib);
+  Serial.println("Calibration done!");
+  Serial.println("Accel biases X/Y/Z: ");
+  Serial.print(calib.accelBias[0]);
+  Serial.print(", ");
+  Serial.print(calib.accelBias[1]);
+  Serial.print(", ");
+  Serial.println(calib.accelBias[2]);
+  Serial.println("Gyro biases X/Y/Z: ");
+  Serial.print(calib.gyroBias[0]);
+  Serial.print(", ");
+  Serial.print(calib.gyroBias[1]);
+  Serial.print(", ");
+  Serial.println(calib.gyroBias[2]);
+  if (IMU.hasMagnetometer()) {
+    Serial.println("Mag biases X/Y/Z: ");
+    Serial.print(calib.magBias[0]);
+    Serial.print(", ");
+    Serial.print(calib.magBias[1]);
+    Serial.print(", ");
+    Serial.println(calib.magBias[2]);
+    Serial.println("Mag Scale X/Y/Z: ");
+    Serial.print(calib.magScale[0]);
+    Serial.print(", ");
+    Serial.print(calib.magScale[1]);
+    Serial.print(", ");
+    Serial.println(calib.magScale[2]);
+  }
+  delay(5000);
+  IMU.init(calib, IMU_ADDRESS);
+#endif
 
+  //err = IMU.setGyroRange(500);      //USE THESE TO SET THE RANGE, IF AN INVALID RANGE IS SET IT WILL RETURN -1
+  //err = IMU.setAccelRange(2);       //THESE TWO SET THE GYRO RANGE TO ±500 DPS AND THE ACCELEROMETER RANGE TO ±2g
+  
+  if (err != 0) {
+    Serial.print("Error Setting range: ");
+    Serial.println(err);
+    while (true) {
+      ;
+    }
+  }
 }
 
 void loop() {
-  /* Check if data read */
-  if (imu.Read()) {
-    Serial.print(imu.new_imu_data());
+  IMU.update();
+  IMU.getAccel(&accelData);
+  Serial.print(accelData.accelX);
+  Serial.print("\t");
+  Serial.print(accelData.accelY);
+  Serial.print("\t");
+  Serial.print(accelData.accelZ);
+  Serial.print("\t");
+  IMU.getGyro(&gyroData);
+  Serial.print(gyroData.gyroX);
+  Serial.print("\t");
+  Serial.print(gyroData.gyroY);
+  Serial.print("\t");
+  Serial.print(gyroData.gyroZ);
+  if (IMU.hasMagnetometer()) {
+    IMU.getMag(&magData);
     Serial.print("\t");
-    Serial.print(imu.new_mag_data());
+    Serial.print(magData.magX);
     Serial.print("\t");
-    Serial.print(imu.accel_x_mps2());
+    Serial.print(magData.magY);
     Serial.print("\t");
-    Serial.print(imu.accel_y_mps2());
-    Serial.print("\t");
-    Serial.print(imu.accel_z_mps2());
-    Serial.print("\t");
-    Serial.print(imu.gyro_x_radps());
-    Serial.print("\t");
-    Serial.print(imu.gyro_y_radps());
-    Serial.print("\t");
-    Serial.print(imu.gyro_z_radps());
-    Serial.print("\t");
-    Serial.print(imu.mag_x_ut());
-    Serial.print("\t");
-    Serial.print(imu.mag_y_ut());
-    Serial.print("\t");
-    Serial.print(imu.mag_z_ut());
-    Serial.print("\t");
-    Serial.print(imu.die_temp_c());
-    Serial.print("\n");
+    Serial.print(magData.magZ);
   }
-
+  if (IMU.hasTemperature()) {
+	  Serial.print("\t");
+	  Serial.println(IMU.getTemp());
+  }
+  delay(50);
 }
