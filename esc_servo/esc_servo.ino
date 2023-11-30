@@ -1,3 +1,34 @@
+#include <Servo.h>
+
+byte servo1 = 3; // signal pin for the ESC.
+byte servo2 = 5;
+byte servo3 = 6;
+byte servo4 = 9;
+Servo esc1, esc2, esc3, esc4;
+
+void setup() {
+  esc1.attach(servo1);
+  esc2.attach(servo2);
+  esc3.attach(servo3);
+  esc4.attach(servo4);
+  delay(1000); // delay to allow the ESC to recognize the stopped signal.
+}
+
+void loop() {
+  esc1.writeMicroseconds(2000);
+  esc2.writeMicroseconds(2000);
+  esc3.writeMicroseconds(2000);
+  esc4.writeMicroseconds(2000);
+  delay(5000);  // Run at full speed for 5 seconds
+
+  // Stop the motor
+  esc1.writeMicroseconds(1000);
+  esc2.writeMicroseconds(1000);
+  esc3.writeMicroseconds(1000);
+  esc4.writeMicroseconds(1000);
+  delay(5000); // Send signal to ESC.
+}
+
 //
 //#include <Servo.h>
 //
@@ -23,24 +54,3 @@
 //
 //}
 
-#include <Servo.h>
-
-byte servoPin = 3; // signal pin for the ESC.
-byte potentiometerPin = A0; // analog input pin for the potentiometer.
-Servo servo;
-
-void setup() {
-servo.attach(servoPin);
-//servo.writeMicroseconds(1500); // send "stop" signal to ESC. Also necessary to arm the ESC.
-
-delay(7000); // delay to allow the ESC to recognize the stopped signal.
-}
-
-void loop() {
-
-//int potVal = analogRead(potentiometerPin); // read input from potentiometer.
-
-int pwmVal = map(1,0, 1023, 1100, 1900); // maps potentiometer values to PWM value.
-
-servo.write(360); // Send signal to ESC.
-}
