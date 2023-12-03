@@ -13,11 +13,11 @@ void setup() {
   esc2.attach(servo2);
   esc3.attach(servo3);
   esc4.attach(servo4);
-  delay(3000); // delay to allow the ESC to recognize the stopped signal.
+  delay(10000); // delay to allow the ESC to recognize the stopped signal.
 }
 
 void loop() {
-  int motor_speeds[5] = {2100, 1050, 1060, 1070, 1080};
+  int motor_speeds[5] = {1010, 1000, 1000, 1000, 1000};
 
   for(int i =0; i<1; i++){
     int speed = motor_speeds[i];
@@ -26,15 +26,7 @@ void loop() {
     esc2.writeMicroseconds(speed);
     esc3.writeMicroseconds(speed);
     esc4.writeMicroseconds(speed);
-    delay(4000);  // Run for some seconds
-
-    // Stop the motor
-    esc1.writeMicroseconds(STOPSPEED);
-    esc2.writeMicroseconds(STOPSPEED);
-    esc3.writeMicroseconds(STOPSPEED);
-    esc4.writeMicroseconds(STOPSPEED);
-    delay(1000); // Send signal to ESC.
-
+    delay(1000);  // Run for some seconds
   }
 
   // Stop them just in case
