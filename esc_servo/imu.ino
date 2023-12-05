@@ -29,7 +29,7 @@ void start_imu(){
   }
 
   if (IMU.hasMagnetometer()) {
-    delay(1000);
+    // delay(1000);
     // Serial.println("Move IMU in figure 8 pattern until done.");
     delay(1000);
     IMU.calibrateMag(&calib);

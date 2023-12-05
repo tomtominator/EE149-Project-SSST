@@ -16,8 +16,8 @@ int LED9 = 13;
 
 
 int STOP = 1000;
-int STEADY = 1020;
-int FASTER = 1050;//1020;
+int STEADY = 1050;
+int FASTER = 1070;//1020;
 int SLOWER = 1010;
 
 
@@ -99,7 +99,7 @@ void loop() {
   
   float accel_diff = abs(abs(accelX) - abs(accelY));
   bool one_proppelor_on = false; //accel_diff>=0.8;
-  DIRECTION dir = NULL;
+  DIRECTION dir = D3569;
   if (abs(accelX) <=0.03 && abs(accelY)<=0.03){
     dir = D3569;
   }
@@ -193,7 +193,7 @@ void loop() {
       break;
 
   }
-  // delay(2000);
+  delay(2000);
   esc3.writeMicroseconds(STEADY);
   esc5.writeMicroseconds(STEADY);
   esc6.writeMicroseconds(STEADY);
@@ -203,7 +203,7 @@ void loop() {
   // digitalWrite(LED6, LOW);
   // digitalWrite(LED9, LOW);
 
-  delay(1000);
+  // delay(1000);
   if (millis() - START_TIME >= RUNTIME) {
     stop_drone();
   }
