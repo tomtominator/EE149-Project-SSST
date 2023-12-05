@@ -17,7 +17,7 @@ void setup() {
 }
 
 void loop() {
-  int motor_speeds[5] = {1010, 1000, 1000, 1000, 1000};
+  int motor_speeds[5] = {1050, 1000, 1000, 1000, 1000};
 
   for(int i =0; i<1; i++){
     int speed = motor_speeds[i];
