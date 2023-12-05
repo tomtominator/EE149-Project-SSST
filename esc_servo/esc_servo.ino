@@ -26,7 +26,7 @@ void loop() {
     esc2.writeMicroseconds(speed);
     esc3.writeMicroseconds(speed);
     esc4.writeMicroseconds(speed);
-    delay(1000);  // Run for some seconds
+    delay(5000);  // Run for some seconds
   }
 
   // Stop them just in case
