@@ -17,6 +17,7 @@ void start_imu(){
   
   Wire.begin();
   Wire.setClock(400000); //400khz clock
+
   int err = IMU.init(calib, IMU_ADDRESS);
   delay(1000);
   if (err != 0) {
@@ -26,7 +27,21 @@ void start_imu(){
     digitalWrite(LED9, HIGH);
     while (true);
   }
+
+  if (IMU.hasMagnetometer()) {
+    delay(1000);
+    // Serial.println("Move IMU in figure 8 pattern until done.");
+    delay(1000);
+    IMU.calibrateMag(&calib);
+    // Serial.println("Magnetic calibration done!");
+  }
+  else {
+    delay(5000);
+  }
+  delay(2000);
   IMU.calibrateAccelGyro(&calib);
+  delay(2000);
+  IMU.init(calib, IMU_ADDRESS);
 
 }
 
@@ -38,23 +53,18 @@ void setup_imu() {
   if (err != 0) {
     while (true);
   }
-  IMU.calibrateAccelGyro(&calib);
-
-
-
-  
 #ifdef PERFORM_CALIBRATION
   // Serial.println("FastIMU calibration & data example");
-  // if (IMU.hasMagnetometer()) {
-  //   delay(1000);
-  //   Serial.println("Move IMU in figure 8 pattern until done.");
-  //   delay(3000);
-  //   IMU.calibrateMag(&calib);
-  //   Serial.println("Magnetic calibration done!");
-  // }
-  // else {
-  //   delay(5000);
-  // }
+  if (IMU.hasMagnetometer()) {
+    delay(1000);
+    Serial.println("Move IMU in figure 8 pattern until done.");
+    delay(3000);
+    IMU.calibrateMag(&calib);
+    Serial.println("Magnetic calibration done!");
+  }
+  else {
+    delay(5000);
+  }
 
   delay(2000);
   IMU.calibrateAccelGyro(&calib);
@@ -71,20 +81,20 @@ void setup_imu() {
   Serial.print(calib.gyroBias[1]);
   Serial.print(", ");
   Serial.println(calib.gyroBias[2]);
-  // if (IMU.hasMagnetometer()) {
-  //   Serial.println("Mag biases X/Y/Z: ");
-  //   Serial.print(calib.magBias[0]);
-  //   Serial.print(", ");
-  //   Serial.print(calib.magBias[1]);
-  //   Serial.print(", ");
-  //   Serial.println(calib.magBias[2]);
-  //   Serial.println("Mag Scale X/Y/Z: ");
-  //   Serial.print(calib.magScale[0]);
-  //   Serial.print(", ");
-  //   Serial.print(calib.magScale[1]);
-  //   Serial.print(", ");
-  //   Serial.println(calib.magScale[2]);
-  // }
+  if (IMU.hasMagnetometer()) {
+    Serial.println("Mag biases X/Y/Z: ");
+    Serial.print(calib.magBias[0]);
+    Serial.print(", ");
+    Serial.print(calib.magBias[1]);
+    Serial.print(", ");
+    Serial.println(calib.magBias[2]);
+    Serial.println("Mag Scale X/Y/Z: ");
+    Serial.print(calib.magScale[0]);
+    Serial.print(", ");
+    Serial.print(calib.magScale[1]);
+    Serial.print(", ");
+    Serial.println(calib.magScale[2]);
+  }
   delay(5000);
   IMU.init(calib, IMU_ADDRESS);
 #endif
