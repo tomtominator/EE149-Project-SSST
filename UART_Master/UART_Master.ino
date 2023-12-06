@@ -1,22 +1,14 @@
-#include <HardwareSerial.h>
-
-HardwareSerial SerialPort(2); // use UART2
-
-
-// For testing
-int incomingByte = 0; // for incoming serial data
-
+// ESP32 CAM - UART Master
 
 void setup()  
 {
-  //Serial.begin(9600);
-  SerialPort.begin(9600, SERIAL_8N1, 16, 17); 
+  Serial.begin(9600, SERIAL_8N1, 3, 1); 
 } 
 void loop()  
 { 
   // Transmit
-  SerialPort.print('a');
-  delay(1000);
-  SerialPort.print('b');
-  delay(1000);
+  Serial.print('a');
+  delay(50);
+  Serial.print('b');
+  delay(50);
 }

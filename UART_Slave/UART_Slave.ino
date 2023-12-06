@@ -1,23 +1,18 @@
-// Code for NodeMCU ESP32S
-
-#include <HardwareSerial.h>
-
-HardwareSerial SerialPort(2); // use UART2
-
+// Ardunio Uno - UART Slave
 
 int incoming  = 'a';
-int LED = 2;
+int LED = 13;
 
 void setup()
 {
-  SerialPort.begin(9600, SERIAL_8N1, 16, 17); 
+  Serial.begin(9600);
   pinMode(LED, OUTPUT);
 }
 void loop()
 {
-  if (SerialPort.available() > 0)
+  if (Serial.available() > 0)
   {
-    incoming = SerialPort.read();
+    incoming = Serial.read();
     if (incoming == 'a') {
       digitalWrite(LED, LOW);
     }
