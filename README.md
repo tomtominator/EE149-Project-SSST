@@ -1,5 +1,15 @@
 # EE149-Project-SSST
 
+UART: 
+Tested using ESP32 CAM(slave) and NodeMCU ESP32(master).
+NodeMCU used UART2 (pins 16,17). ESP32 CAM used its primary (and only UART, which is also used for flashing)(pins 1,3).
+
+To upload when using primary uart pin GPIO0 must be brought low(done automatically by the micro-usb extension board).
+
+Next test is to have ESP32 CAM as master and ardunio Uno as slave.
+
+-----
+
 Links: 
 Drone construction guide: https://www.brokking.net/ymfc-al_main.html  
 
