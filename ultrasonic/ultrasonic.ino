@@ -1,5 +1,5 @@
-int trigPin = 12;    // TRIG pin
-int echoPin = 13;    // ECHO pin
+int trigPin = 7;    // TRIG pin
+int echoPin = 2;    // ECHO pin
 
 float duration_us, distance_cm;
 
