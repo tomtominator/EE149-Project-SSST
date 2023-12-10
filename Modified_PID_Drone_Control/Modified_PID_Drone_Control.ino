@@ -218,10 +218,7 @@ void loop() {
 
       colonIndex = secondHalf.indexOf(':');
       int whichXYZ = secondHalf.substring(0, colonIndex).toInt();
-      float floatVal = secondHalf.substring(colonIndex + 2).toFloat();
-      if (floatVal>=1){
-        floatVal=0;
-      }
+      float floatVal = secondHalf.substring(colonIndex + 1).toFloat();
       
       switch (whichPID) {
         case 0:
