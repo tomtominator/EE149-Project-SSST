@@ -200,48 +200,37 @@ void loop() {
   // Receive throttle via serial:
   if (Serial.available() > 0) {
     String inputString = Serial.readString();
-    // if sending throttle, no colon in it
+    // if sending throttle, no colon in input
     if (inputString.indexOf(':') == -1) {
       int incoming_throttle = inputString.toInt();
       if (incoming_throttle != 0) {
         input_throttle = incoming_throttle;
-        Serial.print("Throttle set: ");
-        Serial.println(input_throttle);
+//        Serial.print("Throttle set: ");
+//        Serial.println(input_throttle);
       }
       // if there is a colon, we are setting x, y, or z o coefficiant of P, I, or D
-      // eg. 1:0:0.23 means we are setting the Z value of P to 0.23
+      // eg. 1:0:0.23 means we are setting the Z coefficient of P to 0.23
     } else {
-
-      // incoming = Serial.parseInt();
-
       int colonIndex = inputString.indexOf(':');
 
-      // Extract the first part of the string (before the colon)
-      int whichPID = inputString.substring(0, colonIndex - 1).toInt();
-      String secondHalf = inputString.substring(colonIndex + 2);
+      int whichPID = inputString.substring(0, colonIndex ).toInt();
+      String secondHalf = inputString.substring(colonIndex+1);
 
       colonIndex = secondHalf.indexOf(':');
-      int whichXYZ = secondHalf.substring(0, colonIndex - 1).toInt();
+      int whichXYZ = secondHalf.substring(0, colonIndex).toInt();
       float floatVal = secondHalf.substring(colonIndex + 2).toFloat();
-
-      // Extract the second part of the string (after the colon) and convert it to a float
-
-      // float floatValue = value.toFloat();
-      Serial.print("whichPID, XYZ, floatVal: ");
-      Serial.print(" ");
-      Serial.print(whichPID);
-      Serial.print(" ");
-      Serial.print(whichXYZ);
-      Serial.print(" ");
-      Serial.println(floatVal);
+      if (floatVal>=1){
+        floatVal=0;
+      }
+      
       switch (whichPID) {
-        case 1:
+        case 0:
           Kp[whichXYZ] = floatVal;
           break;
-        case 2:
+        case 1:
           Ki[whichXYZ] = floatVal;
           break;
-        case 3:
+        case 2:
           Kd[whichXYZ] = floatVal;
           break;
       }
@@ -448,6 +437,9 @@ void pidController(int input_throttle) {
   pulse_length_esc3 = minMax(pulse_length_esc3, 1000, 2000);
   pulse_length_esc4 = minMax(pulse_length_esc4, 1000, 2000);
 
+//  delay(1000);
+  
+
   throttle_print += 1;
   if (throttle_print > 100) {
     Serial.print("Throttles: ");
@@ -458,6 +450,29 @@ void pidController(int input_throttle) {
     Serial.print(pulse_length_esc3);
     Serial.print("  ");
     Serial.println(pulse_length_esc4);
+
+    Serial.println("PID Coefficients: ");
+    Serial.print("Kp: ");
+    Serial.print(Kp[0]);
+    Serial.print(" ");
+    Serial.print(Kp[1]);
+    Serial.print(" ");
+    Serial.println(Kp[2]);
+  
+    Serial.print("Ki: ");
+    Serial.print(Ki[0]);
+    Serial.print(" ");
+    Serial.print(Ki[1]);
+    Serial.print(" ");
+    Serial.println(Ki[2]);
+  
+    Serial.print("Kd: ");
+    Serial.print(Kd[0]);
+    Serial.print(" ");
+    Serial.print(Kd[1]);
+    Serial.print(" ");
+    Serial.println(Kd[2]);
+
 
     // Serial.print("PID: ");
     // Serial.print(pitch_pid);
@@ -491,10 +506,10 @@ void pidController(int input_throttle) {
     // Serial.print("  ");
     // Serial.println(pid_set_points[YAW]);
 
-    Serial.print("Measured: ");
-    Serial.print(measures[PITCH] - measures_offset[PITCH]);
-    Serial.print("  ");
-    Serial.println(measures[ROLL] - measures_offset[ROLL]);
+//    Serial.print("Measured: ");
+//    Serial.print(measures[PITCH] - measures_offset[PITCH]);
+//    Serial.print("  ");
+//    Serial.println(measures[ROLL] - measures_offset[ROLL]);
 
     // Serial.print("Gyro Angle: ");
     // Serial.print(gyro_angle[X]);
