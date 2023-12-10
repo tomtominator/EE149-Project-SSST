@@ -109,7 +109,7 @@ float Kd[3] = { 0, 0, 0 };     //{0, 18, 18};        // D coefficients in that o
  */
 int status = STOPPED;
 // ---------------------------------------------------------------------------
-int battery_voltage;
+float battery_voltage;
 // ---------------------------------------------------------------------------
 
 // Thomas Added:
@@ -126,6 +126,8 @@ bool calibrate_acc = false;
 bool gyro_angle_integration = false;
 
 #define PID_RANGE 100  // Thomas: Original was 400
+
+#define BATTERY_PIN 3  // pin the voltage is read from, orignial was A0
 
 /**
  * Setup configuration
@@ -205,21 +207,21 @@ void loop() {
       int incoming_throttle = inputString.toInt();
       if (incoming_throttle != 0) {
         input_throttle = incoming_throttle;
-//        Serial.print("Throttle set: ");
-//        Serial.println(input_throttle);
+        //        Serial.print("Throttle set: ");
+        //        Serial.println(input_throttle);
       }
       // if there is a colon, we are setting x, y, or z o coefficiant of P, I, or D
       // eg. 1:0:0.23 means we are setting the Z coefficient of P to 0.23
     } else {
       int colonIndex = inputString.indexOf(':');
 
-      int whichPID = inputString.substring(0, colonIndex ).toInt();
-      String secondHalf = inputString.substring(colonIndex+1);
+      int whichPID = inputString.substring(0, colonIndex).toInt();
+      String secondHalf = inputString.substring(colonIndex + 1);
 
       colonIndex = secondHalf.indexOf(':');
       int whichXYZ = secondHalf.substring(0, colonIndex).toInt();
       float floatVal = secondHalf.substring(colonIndex + 1).toFloat();
-      
+
       switch (whichPID) {
         case 0:
           Kp[whichXYZ] = floatVal;
@@ -236,7 +238,7 @@ void loop() {
   // 5. Calculate motors speed with PID controller
   pidController(input_throttle);
 
-  //compensateBatteryDrop(); ignore for now
+  compensateBatteryDrop(); 
   //}
 
   // 6. Apply motors speed
@@ -426,10 +428,6 @@ void pidController(int input_throttle) {
     pulse_length_esc2 = throttle + roll_pid - pitch_pid - yaw_pid;
     pulse_length_esc3 = throttle - roll_pid + pitch_pid - yaw_pid;
     pulse_length_esc4 = throttle + roll_pid + pitch_pid + yaw_pid;
-    pulse_length_esc1 = minMax(pulse_length_esc1, 1001, 1050);
-    pulse_length_esc2 = minMax(pulse_length_esc2, 1001, 1050);
-    pulse_length_esc3 = minMax(pulse_length_esc3, 1001, 1050);
-    pulse_length_esc4 = minMax(pulse_length_esc4, 1001, 1050);
   }
 
   // Prevent out-of-range-values
@@ -438,8 +436,8 @@ void pidController(int input_throttle) {
   pulse_length_esc3 = minMax(pulse_length_esc3, 1000, 2000);
   pulse_length_esc4 = minMax(pulse_length_esc4, 1000, 2000);
 
-//  delay(1000);
-  
+  //  delay(1000);
+
 
   throttle_print += 1;
   if (throttle_print > 100) {
@@ -459,14 +457,14 @@ void pidController(int input_throttle) {
     Serial.print(Kp[1]);
     Serial.print(" ");
     Serial.println(Kp[2]);
-  
+
     Serial.print("Ki: ");
     Serial.print(Ki[0]);
     Serial.print(" ");
     Serial.print(Ki[1]);
     Serial.print(" ");
     Serial.println(Ki[2]);
-  
+
     Serial.print("Kd: ");
     Serial.print(Kd[0]);
     Serial.print(" ");
@@ -507,10 +505,10 @@ void pidController(int input_throttle) {
     // Serial.print("  ");
     // Serial.println(pid_set_points[YAW]);
 
-//    Serial.print("Measured: ");
-//    Serial.print(measures[PITCH] - measures_offset[PITCH]);
-//    Serial.print("  ");
-//    Serial.println(measures[ROLL] - measures_offset[ROLL]);
+    //    Serial.print("Measured: ");
+    //    Serial.print(measures[PITCH] - measures_offset[PITCH]);
+    //    Serial.print("  ");
+    //    Serial.println(measures[ROLL] - measures_offset[ROLL]);
 
     // Serial.print("Gyro Angle: ");
     // Serial.print(gyro_angle[X]);
@@ -845,10 +843,15 @@ float calculateYawSetPoint(int yaw_pulse, int throttle_pulse) {
  */
 void compensateBatteryDrop() {
   if (isBatteryConnected()) {
-    pulse_length_esc1 += pulse_length_esc1 * ((1240 - battery_voltage) / (float)3500);
-    pulse_length_esc2 += pulse_length_esc2 * ((1240 - battery_voltage) / (float)3500);
-    pulse_length_esc3 += pulse_length_esc3 * ((1240 - battery_voltage) / (float)3500);
-    pulse_length_esc4 += pulse_length_esc4 * ((1240 - battery_voltage) / (float)3500);
+    Serial.println("BATTERY CONNECTED")
+    // pulse_length_esc1 += pulse_length_esc1 * ((1240 - battery_voltage) / (float)3500);
+    // pulse_length_esc2 += pulse_length_esc2 * ((1240 - battery_voltage) / (float)3500);
+    // pulse_length_esc3 += pulse_length_esc3 * ((1240 - battery_voltage) / (float)3500);
+    // pulse_length_esc4 += pulse_length_esc4 * ((1240 - battery_voltage) / (float)3500);
+  } else {
+    Serial.println("BATTERY DEAD");
+    stopAll();
+    while(true);
   }
 }
 
@@ -859,9 +862,15 @@ void compensateBatteryDrop() {
  */
 bool isBatteryConnected() {
   // Reduce noise with a low-pass filter (10Hz cutoff frequency)
-  battery_voltage = battery_voltage * 0.92 + (analogRead(0) + 65) * 0.09853;
+  // battery_voltage = battery_voltage * 0.92 + (analogRead(BATTERY_PIN) + 65) * 0.09853;
+  float battery_reading = analogRead(BATTERY_PIN)* (5.0 / 1023.0);
+  battery_voltage = battery_reading  / 0.389;
+  Serial.print("BATTERY VOLTAGE: ");
+  Serial.println(battery_voltage);
+  Serial.print("ANALOG READ: ");
+  Serial.println(analogRead(BATTERY_PIN));
 
-  return battery_voltage < 1240 && battery_voltage > 800;
+  return battery_voltage < 12.4 && battery_voltage > 10;
 }
 
 /**
