@@ -426,6 +426,10 @@ void pidController(int input_throttle) {
     pulse_length_esc2 = throttle + roll_pid - pitch_pid - yaw_pid;
     pulse_length_esc3 = throttle - roll_pid + pitch_pid - yaw_pid;
     pulse_length_esc4 = throttle + roll_pid + pitch_pid + yaw_pid;
+    pulse_length_esc1 = minMax(pulse_length_esc1, 1001, 1050);
+    pulse_length_esc2 = minMax(pulse_length_esc2, 1001, 1050);
+    pulse_length_esc3 = minMax(pulse_length_esc3, 1001, 1050);
+    pulse_length_esc4 = minMax(pulse_length_esc4, 1001, 1050);
   }
 
   // Prevent out-of-range-values
