@@ -14,6 +14,7 @@
 #define YAW      0
 #define PITCH    1
 #define ROLL     2
+#define THROTTLE 3
 
 #define X           0     // X axis
 #define Y           1     // Y axis
@@ -36,12 +37,16 @@ volatile unsigned int pulse_length[4] = {1500, 1500, 1000, 1500};
 volatile unsigned long current_time;
 volatile unsigned long timer[4]; // Timer of each channel
 
+// Used to configure which control (yaw, pitch, roll, throttle) is on which channel
+int mode_mapping[4];
+
 // ----------------------- MPU variables -------------------------------------
 // The RAW values got from gyro (in °/sec) in that order: X, Y, Z
 int gyro_raw[3] = {0,0,0};
 
 // Average gyro offsets of each axis in that order: X, Y, Z
 long gyro_offset[3] = {0, 0, 0};
+long acc_offset[3] = {0, 0, 0};
 
 // Calculated angles from gyro's values in that order: X, Y, Z
 float gyro_angle[3]  = {0,0,0};
@@ -65,6 +70,7 @@ float angular_motions[3] = {0, 0, 0};
  *  - Nose right implies a positive yaw
  */
 float measures[3] = {0, 0, 0};
+float measures_offset[3] = {0, 0, 0};
 
 // MPU's temperature
 int temperature;
@@ -89,9 +95,9 @@ float delta_err[3]      = {0, 0, 0}; // Error deltas in that order   : Yaw, Pitc
 float error_sum[3]      = {0, 0, 0}; // Error sums (used for integral component) : [Yaw, Pitch, Roll]
 float previous_error[3] = {0, 0, 0}; // Last errors (used for derivative component) : [Yaw, Pitch, Roll]
 // PID coefficients
-float Kp[3] = {4.0, 1.3, 1.3};    // P coefficients in that order : Yaw, Pitch, Roll
-float Ki[3] = {0.02, 0.04, 0.04}; // I coefficients in that order : Yaw, Pitch, Roll
-float Kd[3] = {0, 18, 18};        // D coefficients in that order : Yaw, Pitch, Roll
+float Kp[3] = {4.0, 1.3, 1.3}; //{4.0, 1.3, 1.3};    // P coefficients in that order : Yaw, Pitch, Roll 
+float Ki[3] = {0, 0, 0};//{0.02, 0.04, 0.04}; // I coefficients in that order : Yaw, Pitch, Roll
+float Kd[3] = {0, 0, 0}; //{0, 18, 18};        // D coefficients in that order : Yaw, Pitch, Roll
 // ---------------------------------------------------------------------------
 /**
  * Status of the quadcopter:
@@ -108,10 +114,18 @@ int battery_voltage;
 
 // Thomas Added:
 int to_start = 1;
+bool started = false;
 int throttle_print = 0;
 int throttle_last_incr = 0;
 int input_throttle = 1000;
 long incoming = 0;
+
+int incr = 0;
+
+bool calibrate_acc = false;
+bool gyro_angle_integration = false;
+
+#define PID_RANGE 100 // Thomas: Original was 400 
 
 /**
  * Setup configuration
@@ -127,10 +141,12 @@ void setup() {
     pinMode(13, OUTPUT);
     digitalWrite(13, HIGH);
 
+    configureChannelMapping();
+
     // Set pins #4 #5 #6 #7 as outputs
     DDRD |= B11110000;
 
-    Serial.println("Begin acc setup");
+    Serial.println("Begin IMU setup");
     setupMpu6050Registers();
 
     calibrateMpu6050();
@@ -140,28 +156,41 @@ void setup() {
     // Initialize loop_timer
     loop_timer = micros();
 
+    // Thomas: moved from isStarted()
+    // Reset PID controller's variables to prevent bump start
+    resetPidController();
+    resetGyroAngles();
+    
+    Serial.println("IMU armed");
+
+    setFlat(); // Thomas: begins measuring and zeros any different between IMU and drone orientation (note drone must start flat)
+
     // Turn LED off now setup is done
     digitalWrite(13, LOW);
-    Serial.println("End Setup");
+    Serial.println("Setup Complete");
 }
 
 /**
  * Main program loop
  */
 void loop() {
-    // 1. First, read raw values from MPU-6050
+    // 1. First, read raw values from MPU-6050 (in our case MPU-9250)
     readSensor();
 
     // 2. Calculate angles from gyro & accelerometer's values
     calculateAngles();
 
     // 3. Calculate set points of PID controller
-    calculateSetPoints(); // Changed to do nothing (all points to 0 degrees/sec ie hover)
+    calculateSetPoints(); // Changed to do nothing (no remote input except throttle)
 
     // 4. Calculate errors comparing angular motions to set points
-    calculateErrors();
-
-    if (isStarted()) {
+    calculateErrorsAlternative(); // Thomas: calculateErrors();
+    // Remove start sequence as it is unneeded
+    //if (isStarted()) {
+      if (!started) {
+        Serial.println("Start PID");
+        started = true;
+      }
         // Slow ramp input throttle:
         // if (throttle_last_incr - millis() > 500) {
         //   input_throttle += 1;
@@ -183,7 +212,7 @@ void loop() {
         pidController(input_throttle);
 
         //compensateBatteryDrop(); ignore for now
-    }
+    //}
 
     // 6. Apply motors speed
     applyMotorSpeed();
@@ -214,8 +243,8 @@ void applyMotorSpeed() {
         difference = now - loop_timer;
 
         if (difference >= pulse_length_esc1) PORTD &= B11101111; // Set pin #4 LOW
-        if (difference >= pulse_length_esc2) PORTD &= B11011111; // Set pin #5 LOW
-        if (difference >= pulse_length_esc3) PORTD &= B10111111; // Set pin #6 LOW
+        if (difference >= 1000 /*pulse_length_esc2*/) PORTD &= B11011111; // Set pin #5 LOW
+        if (difference >= 1000 /*pulse_length_esc3*/) PORTD &= B10111111; // Set pin #6 LOW
         if (difference >= pulse_length_esc4) PORTD &= B01111111; // Set pin #7 LOW
     }
 }
@@ -241,6 +270,21 @@ void readSensor() {
     gyro_raw[Z] = Wire.read() << 8 | Wire.read(); // Add the low and high byte to the gyro_raw[Z] variable
 }
 
+
+/**
+*  Thomas: Set what is flat for drone (may be differnt than IMU flat)
+*/ 
+void setFlat() {
+  long start = millis();
+  // Do this for 4 seconds
+
+  while (4000 > millis() - start) {
+    readSensor();
+    calculateAngles();
+  }
+  measures_offset[ROLL] = measures[ROLL];
+  measures_offset[PITCH] = measures[PITCH];
+}
 /**
  * Calculate real angles from gyro and accelerometer's values
  */
@@ -292,6 +336,13 @@ void calculateGyroAngles() {
  * Calculate pitch & roll angles using only the accelerometer.
  */
 void calculateAccelerometerAngles() {
+    // Thomas: calibrate acc as well
+    if (calibrate_acc) {
+      acc_raw[X] -= acc_offset[X];
+      acc_raw[Y] -= acc_offset[Y];
+      acc_raw[Z] -= acc_offset[Z];
+    }
+
     // Calculate total 3D acceleration vector : √(X² + Y² + Z²)
     acc_total_vector = sqrt(pow(acc_raw[X], 2) + pow(acc_raw[Y], 2) + pow(acc_raw[Z], 2));
 
@@ -339,10 +390,10 @@ void pidController(int input_throttle) {
         pitch_pid = (errors[PITCH] * Kp[PITCH]) + (error_sum[PITCH] * Ki[PITCH]) + (delta_err[PITCH] * Kd[PITCH]);
         roll_pid  = (errors[ROLL]  * Kp[ROLL])  + (error_sum[ROLL]  * Ki[ROLL])  + (delta_err[ROLL]  * Kd[ROLL]);
 
-        // Keep values within acceptable range. TODO export hard-coded values in variables/const
-        yaw_pid   = minMax(yaw_pid, -400, 400);
-        pitch_pid = minMax(pitch_pid, -400, 400);
-        roll_pid  = minMax(roll_pid, -400, 400);
+        // Keep values within acceptable range
+        yaw_pid   = minMax(yaw_pid, -PID_RANGE, PID_RANGE);
+        pitch_pid = minMax(pitch_pid, -PID_RANGE, PID_RANGE);
+        roll_pid  = minMax(roll_pid, -PID_RANGE, PID_RANGE);
 
         // Calculate pulse duration for each ESC
         pulse_length_esc1 = throttle - roll_pid - pitch_pid + yaw_pid;
@@ -357,17 +408,85 @@ void pidController(int input_throttle) {
     pulse_length_esc3 = minMax(pulse_length_esc3, 1000, 2000);
     pulse_length_esc4 = minMax(pulse_length_esc4, 1000, 2000);
 
-    // throttle_print += 1;
-    // if (throttle_print > 100) {
-    //   Serial.print(pulse_length_esc1);
-    //   Serial.print("  ");
-    //   Serial.print(pulse_length_esc2);
-    //   Serial.print("  ");
-    //   Serial.print(pulse_length_esc3);
-    //   Serial.print("  ");
-    //   Serial.println(pulse_length_esc4);
-    //   throttle_print = 0;
-    // }
+    throttle_print += 1;
+    if (throttle_print > 100) {
+      Serial.print("Throttles: ");
+      Serial.print(pulse_length_esc1);
+      Serial.print("  ");
+      Serial.print(pulse_length_esc2);
+      Serial.print("  ");
+      Serial.print(pulse_length_esc3);
+      Serial.print("  ");
+      Serial.println(pulse_length_esc4);
+
+      // Serial.print("PID: ");
+      // Serial.print(pitch_pid);
+      // Serial.print("  ");
+      // Serial.print(roll_pid);
+      // Serial.print("  ");
+      // Serial.println(yaw_pid);
+
+      // Serial.print("Error: ");
+      // Serial.print(errors[PITCH]);
+      // Serial.print("  ");
+      // Serial.print(errors[ROLL]);
+      // Serial.print("  ");
+      // Serial.println(errors[YAW]);
+      // Serial.print("Error Sum: ");
+      // Serial.print(error_sum[PITCH]);
+      // Serial.print("  ");
+      // Serial.print(error_sum[ROLL]);
+      // Serial.print("  ");
+      // Serial.println(error_sum[YAW]);
+      // Serial.print("Error delta: ");
+      // Serial.print(delta_err[PITCH]);
+      // Serial.print("  ");
+      // Serial.print(delta_err[ROLL]);
+      // Serial.print("  ");
+      // Serial.println(delta_err[YAW]);
+      // Serial.print("Set points: ");
+      // Serial.print(pid_set_points[PITCH]);
+      // Serial.print("  ");
+      // Serial.print(pid_set_points[ROLL]);
+      // Serial.print("  ");
+      // Serial.println(pid_set_points[YAW]);
+
+      Serial.print("Measured: ");
+      Serial.print(measures[PITCH] - measures_offset[PITCH]);
+      Serial.print("  ");
+      Serial.println(measures[ROLL] - measures_offset[ROLL]);
+
+      // Serial.print("Gyro Angle: ");
+      // Serial.print(gyro_angle[X]);
+      // Serial.print("  ");
+      // Serial.println(gyro_angle[Y]);
+
+      // Serial.print("Acc raw: ");
+      // Serial.print(acc_raw[X]);
+      // Serial.print("  ");
+      // Serial.println(acc_raw[Y]);
+
+      // Serial.print("Acc Offset from Calibration: ");
+      // Serial.print(acc_offset[X]);
+      // Serial.print("  ");
+      // Serial.println(acc_offset[Y]);
+
+      // Serial.print("Gyro Raw (calibrated): ");
+      // Serial.print(gyro_raw[X]);
+      // Serial.print("  ");
+      // Serial.print(gyro_raw[Y]);
+      // Serial.print("  ");
+      // Serial.println(gyro_raw[Z]);
+
+      // Serial.print("Gyro Offset from Calibration: ");
+      // Serial.print(gyro_offset[X]);
+      // Serial.print("  ");
+      // Serial.println(gyro_offset[Y]);
+      
+
+      throttle_print = 0;
+      Serial.println("-------");
+    }
 }
 
 /**
@@ -378,6 +497,7 @@ void calculateErrors() {
     errors[YAW]   = angular_motions[YAW]   - pid_set_points[YAW];
     errors[PITCH] = angular_motions[PITCH] - pid_set_points[PITCH];
     errors[ROLL]  = angular_motions[ROLL]  - pid_set_points[ROLL];
+
 
     // Calculate sum of errors : Integral coefficients
     error_sum[YAW]   += errors[YAW];
@@ -399,6 +519,37 @@ void calculateErrors() {
     previous_error[PITCH] = errors[PITCH];
     previous_error[ROLL]  = errors[ROLL];
 }
+
+// Thomas: alternative error calculation. Does not use angular motion but 
+//         attempts to set the measure orientation to 0.0, 0.0
+
+void calculateErrorsAlternative() {
+    // Calculate current errors
+    errors[YAW]   = 0; //angular_motions[YAW]   - pid_set_points[YAW]; // Don't change YAW error
+    errors[PITCH] = (measures[PITCH] - measures_offset[PITCH]) - 0;
+    errors[ROLL]  = (measures[ROLL]  - measures_offset[ROLL]) - 0;
+
+
+    // Calculate sum of errors : Integral coefficients
+    error_sum[YAW]   += errors[YAW];
+    error_sum[PITCH] += errors[PITCH];
+    error_sum[ROLL]  += errors[ROLL];
+
+    // Keep values in acceptable range
+    error_sum[YAW]   = minMax(error_sum[YAW],   -PID_RANGE/Ki[YAW],   PID_RANGE/Ki[YAW]);
+    error_sum[PITCH] = minMax(error_sum[PITCH], -PID_RANGE/Ki[PITCH], PID_RANGE/Ki[PITCH]);
+    error_sum[ROLL]  = minMax(error_sum[ROLL],  -PID_RANGE/Ki[ROLL],  PID_RANGE/Ki[ROLL]);
+
+    // Calculate error delta : Derivative coefficients
+    delta_err[YAW]   = errors[YAW]   - previous_error[YAW];
+    delta_err[PITCH] = errors[PITCH] - previous_error[PITCH];
+    delta_err[ROLL]  = errors[ROLL]  - previous_error[ROLL];
+
+    // Save current error as previous_error for next time
+    previous_error[YAW]   = errors[YAW];
+    previous_error[PITCH] = errors[PITCH];
+    previous_error[ROLL]  = errors[ROLL];
+} 
 
 /**
  * Configure gyro and accelerometer precision as following:
@@ -451,6 +602,11 @@ void calibrateMpu6050() {
         gyro_offset[Y] += gyro_raw[Y];
         gyro_offset[Z] += gyro_raw[Z];
 
+        // Thomas: calibrate acc as well
+        acc_offset[X] += acc_raw[X];
+        acc_offset[Y] += acc_raw[Y];
+        acc_offset[Z] += acc_raw[Z];
+
         // Generate low throttle pulse to init ESC and prevent them beeping
         PORTD |= B11110000;      // Set pins #4 #5 #6 #7 HIGH
         delayMicroseconds(1000); // Wait 1000µs
@@ -464,6 +620,12 @@ void calibrateMpu6050() {
     gyro_offset[X] /= max_samples;
     gyro_offset[Y] /= max_samples;
     gyro_offset[Z] /= max_samples;
+
+    // Thomas: calibrate acc as well
+    acc_offset[X] /= max_samples;
+    acc_offset[Y] /= max_samples;
+    acc_offset[Z] /= max_samples;
+    
 }
 
 /**
@@ -512,12 +674,12 @@ bool isStarted() {
     }
 
     // When left stick is moved in the bottom right corner
-    if (status == STARTED && micros() > 200000000) { // stop after 200 seconds
-        status = STOPPED;
-        // Make sure to always stop motors when status is STOPPED
-        stopAll();
-        Serial.println("Stopped");
-    }
+    // if (status == STARTED && micros() > 200000000) { // stop after 200 seconds
+    //     status = STOPPED;
+    //     // Make sure to always stop motors when status is STOPPED
+    //     stopAll();
+    //     Serial.println("Stopped");
+    // }
 
     return status == STARTED;
 }
@@ -557,13 +719,70 @@ void resetPidController() {
     previous_error[ROLL]  = 0;
 }
 
+
+/**
+ * Customize mapping of controls: set here which command is on which channel and call
+ * this function in setup() routine.
+ */
+void configureChannelMapping() {
+    mode_mapping[YAW]      = CHANNEL4;
+    mode_mapping[PITCH]    = CHANNEL2;
+    mode_mapping[ROLL]     = CHANNEL1;
+    mode_mapping[THROTTLE] = CHANNEL3;
+}
+
 /**
  * Calculate PID set points on axis YAW, PITCH, ROLL
  */
+
 void calculateSetPoints() {
-    pid_set_points[YAW]   = 0; //calculateYawSetPoint(pulse_length[mode_mapping[YAW]], pulse_length[mode_mapping[THROTTLE]]);
-    pid_set_points[PITCH] = 0; //calculateSetPoint(measures[PITCH], pulse_length[mode_mapping[PITCH]]);
-    pid_set_points[ROLL]  = 0; //calculateSetPoint(measures[ROLL], pulse_length[mode_mapping[ROLL]]);
+    pid_set_points[YAW]   = calculateYawSetPoint(pulse_length[mode_mapping[YAW]], pulse_length[mode_mapping[THROTTLE]]);
+    pid_set_points[PITCH] = calculateSetPoint(measures[PITCH] - measures_offset[PITCH] , pulse_length[mode_mapping[PITCH]]);
+    pid_set_points[ROLL]  = calculateSetPoint(measures[ROLL] - measures_offset[ROLL], pulse_length[mode_mapping[ROLL]]);
+}
+
+/**
+ * Calculate the PID set point in °/s
+ *
+ * @param float angle         Measured angle (in °) on an axis
+ * @param int   channel_pulse Pulse length of the corresponding receiver channel
+ * @return float
+ */
+float calculateSetPoint(float angle, int channel_pulse) {
+    //float level_adjust = angle * 15; // Value 15 limits maximum angle value to ±32.8°
+    float level_adjust = angle; //Thomas: Why multiply measured angle by 15???
+    float set_point    = 0;
+
+    // Need a dead band of 16µs for better result
+    if (channel_pulse > 1508) {
+        set_point = channel_pulse - 1508;
+    } else if (channel_pulse <  1492) {
+        set_point = channel_pulse - 1492;
+    }
+
+    set_point -= level_adjust;
+    //set_point /= 3; Thomas: what is the purpose of this???
+  
+    return set_point;
+}
+
+/**
+ * Calculate the PID set point of YAW axis in °/s
+ *
+ * @param int yaw_pulse      Receiver pulse length of yaw's channel
+ * @param int throttle_pulse Receiver pulse length of throttle's channel
+ * @return float
+ */
+float calculateYawSetPoint(int yaw_pulse, int throttle_pulse) {
+    float set_point = 0;
+
+    // Do not yaw when turning off the motors
+    if (throttle_pulse > 1050) {
+        // There is no notion of angle on this axis as the quadcopter can turn on itself
+        set_point = calculateSetPoint(0, yaw_pulse);
+    }
+
+    return set_point;
 }
 
 /**
@@ -603,6 +822,9 @@ bool isBatteryConnected() {
  * @see https://www.firediy.fr/article/utiliser-sa-radiocommande-avec-un-arduino-drone-ch-6
  */
 ISR(PCINT0_vect) {
+        while(1) {
+          Serial.println("ERROR ISR CALLED!!");
+        }
         current_time = micros();
 
         // Channel 1 -------------------------------------------------
