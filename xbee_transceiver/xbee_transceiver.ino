@@ -1,8 +1,4 @@
 #include <SoftwareSerial.h>
-#include <XBee.h>
-
-XBee zbee = XBee();
-XBeeResponse response = XBeeResponse();
 
 // Define the XBee module's RX and TX pins
 const int xbee_Rx = 0;  // Connect XBee's TX to Arduino's pin 0
@@ -29,18 +25,4 @@ void loop() {
     Serial.print("Received from Serial Monitor: ");
     Serial.println(data);
   }
-
-  // zbee.readPacket();
-
-  // if (zbee.getResponse().isAvailable()) {
-  //   if (zbee.getResponse().getApiId() == ZB_RX_RESPONSE) {
-  //     zbee.getResponse().getZBRxResponse(response);
-
-  //     Serial.print("Received: ");
-  //     for (int i = 0; i < response.getDataLength(); i++) {
-  //       Serial.write(response.getData(i));
-  //     }
-  //     Serial.println();
-  //   }
-  // }
 }
