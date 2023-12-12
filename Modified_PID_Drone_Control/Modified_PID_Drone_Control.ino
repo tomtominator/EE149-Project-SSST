@@ -5,11 +5,15 @@
 
 // ---------------------------------------------------------------------------
 #include <Wire.h>
+#include <SoftwareSerial.h>
 // ------------------- Define some constants for convenience -----------------
 #define CHANNEL1 0
 #define CHANNEL2 1
 #define CHANNEL3 2
 #define CHANNEL4 3
+
+#define XBEE_RX  2
+#define XBEE_TX  3
 
 #define YAW      0
 #define PITCH    1
@@ -27,6 +31,8 @@
 #define STARTING 1
 #define STARTED  2
 // ---------------- Receiver variables ---------------------------------------
+SoftwareSerial XBee(XBEE_RX, XBEE_TX);
+
 // Previous state of each channel (HIGH or LOW)
 volatile byte previous_state[4];
 
@@ -133,7 +139,8 @@ bool gyro_angle_integration = false;
  * Setup configuration
  */
 void setup() {
-    Serial.begin(115200);
+    Serial.begin(115200); // temp change to work with xbee
+    XBee.begin(9600);
 
     // Start I2C communication
     Wire.begin();
@@ -194,22 +201,14 @@ void loop() {
         started = true;
       }
         // Slow ramp input throttle:
-        // if (throttle_last_incr - millis() > 500) {
-        //   input_throttle += 1;
-        //   throttle_last_incr = millis();
-        // }
-
-        // Receive throttle via serial:
-        if (Serial.available() > 0)
-        {
-          incoming = Serial.parseInt();
-          if (incoming != 0) {
-            input_throttle = incoming;
-            //Serial.print("Throttle set: ");
-            //Serial.println(input_throttle); 
-          }
-          
+        if (throttle_last_incr - millis() > 500) {
+          input_throttle += 1;
+          throttle_last_incr = millis();
         }
+
+        // choose how to input throttle
+        serialThrottle(); 
+
         // 5. Calculate motors speed with PID controller
         pidController(input_throttle);
 
@@ -219,6 +218,41 @@ void loop() {
     // 6. Apply motors speed
     applyMotorSpeed();
     
+}
+
+/**
+ * Sean: Receive throttle via serial (over cable)
+ *
+ */
+void serialThrottle() {
+  if (Serial.available() > 0) {
+    incoming = Serial.parseInt();
+    if (incoming != 0) {
+      input_throttle = incoming;
+      //Serial.print("Throttle set: ");
+      //Serial.println(input_throttle); 
+    }
+  }
+}
+
+/**
+ * Sean: Receive throttle via xbee (wireless)
+ *
+ */
+void xbeeThrottle() {
+  String receivedString = "";
+
+  if (XBee.available() > 0) {  
+    char data = XBee.read();
+    receivedString += data;
+    input_throttle = receivedString.toInt();
+  }
+    // Print the received string if it's not empty
+  if (receivedString.length() > 0) {
+    Serial.print("Received: ");
+    Serial.println(receivedString);
+    // You can perform further actions with the receivedString here
+  }
 }
 
 /**
@@ -839,53 +873,53 @@ bool isBatteryConnected() {
  * @see https://www.arduino.cc/en/Reference/PortManipulation
  * @see https://www.firediy.fr/article/utiliser-sa-radiocommande-avec-un-arduino-drone-ch-6
  */
-ISR(PCINT0_vect) {
-        while(1) {
-          Serial.println("ERROR ISR CALLED!!");
-        }
-        current_time = micros();
+// ISR(PCINT0_vect) {
+//         while(1) {
+//           Serial.println("ERROR ISR CALLED!!");
+//         }
+//         current_time = micros();
 
-        // Channel 1 -------------------------------------------------
-        if (PINB & B00000001) {                                        // Is input 8 high ?
-            if (previous_state[CHANNEL1] == LOW) {                     // Input 8 changed from 0 to 1 (rising edge)
-                previous_state[CHANNEL1] = HIGH;                       // Save current state
-                timer[CHANNEL1] = current_time;                        // Save current time
-            }
-        } else if (previous_state[CHANNEL1] == HIGH) {                 // Input 8 changed from 1 to 0 (falling edge)
-            previous_state[CHANNEL1] = LOW;                            // Save current state
-            pulse_length[CHANNEL1] = current_time - timer[CHANNEL1];   // Calculate pulse duration & save it
-        }
+//         // Channel 1 -------------------------------------------------
+//         if (PINB & B00000001) {                                        // Is input 8 high ?
+//             if (previous_state[CHANNEL1] == LOW) {                     // Input 8 changed from 0 to 1 (rising edge)
+//                 previous_state[CHANNEL1] = HIGH;                       // Save current state
+//                 timer[CHANNEL1] = current_time;                        // Save current time
+//             }
+//         } else if (previous_state[CHANNEL1] == HIGH) {                 // Input 8 changed from 1 to 0 (falling edge)
+//             previous_state[CHANNEL1] = LOW;                            // Save current state
+//             pulse_length[CHANNEL1] = current_time - timer[CHANNEL1];   // Calculate pulse duration & save it
+//         }
 
-        // Channel 2 -------------------------------------------------
-        if (PINB & B00000010) {                                        // Is input 9 high ?
-            if (previous_state[CHANNEL2] == LOW) {                     // Input 9 changed from 0 to 1 (rising edge)
-                previous_state[CHANNEL2] = HIGH;                       // Save current state
-                timer[CHANNEL2] = current_time;                        // Save current time
-            }
-        } else if (previous_state[CHANNEL2] == HIGH) {                 // Input 9 changed from 1 to 0 (falling edge)
-            previous_state[CHANNEL2] = LOW;                            // Save current state
-            pulse_length[CHANNEL2] = current_time - timer[CHANNEL2];   // Calculate pulse duration & save it
-        }
+//         // Channel 2 -------------------------------------------------
+//         if (PINB & B00000010) {                                        // Is input 9 high ?
+//             if (previous_state[CHANNEL2] == LOW) {                     // Input 9 changed from 0 to 1 (rising edge)
+//                 previous_state[CHANNEL2] = HIGH;                       // Save current state
+//                 timer[CHANNEL2] = current_time;                        // Save current time
+//             }
+//         } else if (previous_state[CHANNEL2] == HIGH) {                 // Input 9 changed from 1 to 0 (falling edge)
+//             previous_state[CHANNEL2] = LOW;                            // Save current state
+//             pulse_length[CHANNEL2] = current_time - timer[CHANNEL2];   // Calculate pulse duration & save it
+//         }
 
-        // Channel 3 -------------------------------------------------
-        if (PINB & B00000100) {                                        // Is input 10 high ?
-            if (previous_state[CHANNEL3] == LOW) {                     // Input 10 changed from 0 to 1 (rising edge)
-                previous_state[CHANNEL3] = HIGH;                       // Save current state
-                timer[CHANNEL3] = current_time;                        // Save current time
-            }
-        } else if (previous_state[CHANNEL3] == HIGH) {                 // Input 10 changed from 1 to 0 (falling edge)
-            previous_state[CHANNEL3] = LOW;                            // Save current state
-            pulse_length[CHANNEL3] = current_time - timer[CHANNEL3];   // Calculate pulse duration & save it
-        }
+//         // Channel 3 -------------------------------------------------
+//         if (PINB & B00000100) {                                        // Is input 10 high ?
+//             if (previous_state[CHANNEL3] == LOW) {                     // Input 10 changed from 0 to 1 (rising edge)
+//                 previous_state[CHANNEL3] = HIGH;                       // Save current state
+//                 timer[CHANNEL3] = current_time;                        // Save current time
+//             }
+//         } else if (previous_state[CHANNEL3] == HIGH) {                 // Input 10 changed from 1 to 0 (falling edge)
+//             previous_state[CHANNEL3] = LOW;                            // Save current state
+//             pulse_length[CHANNEL3] = current_time - timer[CHANNEL3];   // Calculate pulse duration & save it
+//         }
 
-        // Channel 4 -------------------------------------------------
-        if (PINB & B00001000) {                                        // Is input 11 high ?
-            if (previous_state[CHANNEL4] == LOW) {                     // Input 11 changed from 0 to 1 (rising edge)
-                previous_state[CHANNEL4] = HIGH;                       // Save current state
-                timer[CHANNEL4] = current_time;                        // Save current time
-            }
-        } else if (previous_state[CHANNEL4] == HIGH) {                 // Input 11 changed from 1 to 0 (falling edge)
-            previous_state[CHANNEL4] = LOW;                            // Save current state
-            pulse_length[CHANNEL4] = current_time - timer[CHANNEL4];   // Calculate pulse duration & save it
-        }
-}
+//         // Channel 4 -------------------------------------------------
+//         if (PINB & B00001000) {                                        // Is input 11 high ?
+//             if (previous_state[CHANNEL4] == LOW) {                     // Input 11 changed from 0 to 1 (rising edge)
+//                 previous_state[CHANNEL4] = HIGH;                       // Save current state
+//                 timer[CHANNEL4] = current_time;                        // Save current time
+//             }
+//         } else if (previous_state[CHANNEL4] == HIGH) {                 // Input 11 changed from 1 to 0 (falling edge)
+//             previous_state[CHANNEL4] = LOW;                            // Save current state
+//             pulse_length[CHANNEL4] = current_time - timer[CHANNEL4];   // Calculate pulse duration & save it
+//         }
+// }
