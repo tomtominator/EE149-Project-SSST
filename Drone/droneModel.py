@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
 import urllib.request
-import serial
 import time
+import serial
 from xbee import XBee
 
 url = 'http://192.168.4.1/cam-hi.jpg'
@@ -31,6 +31,7 @@ up = False
 down = False
 x1, y1 = 0, 500
 x2, y2 = 800, 500
+
 xbee_port = serial.Serial(port, baud_rate)
 xbee = XBee(xbee_port)
 
