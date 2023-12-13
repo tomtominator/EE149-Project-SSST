@@ -22,7 +22,7 @@
 #define X           0     // X axis
 #define Y           1     // Y axis
 #define Z           2     // Z axis
-#define MPU_ADDRESS 0x68  // I2C address of the MPU-6050
+#define MPU_ADDRESS 0x68  // I2C address of the MPU-9250
 #define FREQ        250   // Sampling frequency
 #define SSF_GYRO    65.5  // Sensitivity Scale Factor of the gyro from datasheet
 
@@ -140,7 +140,7 @@ bool gyro_angle_integration = false;
  */
 void setup() {
     Serial.begin(115200); // temp change to work with xbee
-    XBee.begin(9600);
+    XBee.begin(115200);
 
     // Start I2C communication
     Wire.begin();
@@ -156,16 +156,15 @@ void setup() {
     DDRD |= B11110000;
 
     Serial.println("Begin IMU setup");
-    setupMpu6050Registers();
+    setupMpu9250Registers();
 
-    calibrateMpu6050();
+    calibrateMpu9250();
 
     period = (1000000/FREQ) ; // Sampling period in µs
 
     // Initialize loop_timer
     loop_timer = micros();
 
-    // Thomas: moved from isStarted()
     // Reset PID controller's variables to prevent bump start
     resetPidController();
     resetGyroAngles();
@@ -183,19 +182,12 @@ void setup() {
  * Main program loop
  */
 void loop() {
-    // 1. First, read raw values from MPU-6050 (in our case MPU-9250)
     readSensor();
 
-    // 2. Calculate angles from gyro & accelerometer's values
     calculateAngles();
 
-    // 3. Calculate set points of PID controller
-    calculateSetPoints(); // Changed to do nothing (no remote input except throttle)
+    calculateErrors(); 
 
-    // 4. Calculate errors comparing angular motions to set points
-    calculateErrorsAlternative(); // Thomas: calculateErrors();
-    // Remove start sequence as it is unneeded
-    //if (isStarted()) {
     if (!started) {
         Serial.println("Start PID");
         started = true;
@@ -209,12 +201,10 @@ void loop() {
     //input_throttle = target_throttle;
     rampThrottle();
     
-    // 5. Calculate motors speed with PID controller
     pidController(input_throttle);
 
-    compensateBatteryDrop();
+    //compensateBatteryDrop();
 
-    // 6. Apply motors speed
     applyMotorSpeed();
     
 }
@@ -248,8 +238,8 @@ void xbeeThrottle() {
       if (cmd >= 1000 && cmd <= 2000) {
         target_throttle = cmd;
       }
-      Serial.print("Throttle set: ");
-      Serial.println(target_throttle);
+      XBee.print("Throttle set: ");
+      XBee.println(target_throttle);
       // Send back - recieved throttle command
       //XBee.print("recieved");
       RF_command = "";
@@ -319,13 +309,13 @@ void applyMotorSpeed() {
 }
 
 /**
- * Request raw values from MPU6050.
+ * Request raw values from MPU.
  */
 void readSensor() {
-    Wire.beginTransmission(MPU_ADDRESS); // Start communicating with the MPU-6050
+    Wire.beginTransmission(MPU_ADDRESS); // Start communicating
     Wire.write(0x3B);                    // Send the requested starting register
     Wire.endTransmission();              // End the transmission
-    Wire.requestFrom(MPU_ADDRESS,14);    // Request 14 bytes from the MPU-6050
+    Wire.requestFrom(MPU_ADDRESS,14);    // Request 14 bytes
 
     // Wait until all the bytes are received
     while(Wire.available() < 14);
@@ -429,16 +419,10 @@ void calculateAccelerometerAngles() {
  * Calculate motor speed for each motor of an X quadcopter depending on received instructions and measures from sensor
  * by applying PID control.
  *
- * (A) (B)     x
- *   \ /     z ↑
- *    X       \|
- *   / \       +----→ y
- * (C) (D)
- *
- * Motors A & D run clockwise.
- * Motors B & C run counter-clockwise.
- *
- * Each motor output is considered as a servomotor. As a result, value range is about 1000µs to 2000µs
+ * (1) (2)
+ *    X
+ * (3) (4)
+ * Motor value range 1000 - 2000
  */
 void pidController(int input_throttle) {
     float yaw_pid      = 0;
@@ -479,137 +463,24 @@ void pidController(int input_throttle) {
 
     throttle_print += 1;
     if (false && throttle_print > 30) {
-      //Serial.print("Throttles: ");
+        // Printed data to generate a graph
       Serial.print((int)(pulse_length_esc1 - 1020));
       Serial.print("\t");
-      // Serial.print(pulse_length_esc2);
-      // Serial.print("  ");
-      // Serial.print(pulse_length_esc3);
-      // Serial.print("  ");
       Serial.print((int)(pulse_length_esc4 - 1020));
-
-      // Serial.print("PID: ");
-      // Serial.print(pitch_pid);
-      // Serial.print("  ");
-      // Serial.print(roll_pid);
-      // Serial.print("  ");
-      // Serial.println(yaw_pid);
-
-      // Serial.print("Error: ");
-      // Serial.print(errors[PITCH] + errors[ROLL]);
-      // Serial.print("  ");
-      // Serial.print(errors[ROLL]);
-      // Serial.print("  ");
-      // Serial.println(errors[YAW]);
-      // Serial.print("Error Sum: ");
-      // Serial.print(error_sum[PITCH]);
-      // Serial.print("  ");
-      // Serial.print(error_sum[ROLL]);
-      // Serial.print("  ");
-      // Serial.println(error_sum[YAW]);
-      // Serial.print("Error delta: ");
-      // Serial.print(delta_err[PITCH]);
-      // Serial.print("  ");
-      // Serial.print(delta_err[ROLL]);
-      // Serial.print("  ");
-      // Serial.println(delta_err[YAW]);
-      // Serial.print("Set points: ");
-      // Serial.print(pid_set_points[PITCH]);
-      // Serial.print("  ");
-      // Serial.print(pid_set_points[ROLL]);
-      // Serial.print("  ");
-      // Serial.println(pid_set_points[YAW]);
-
-      // Serial.print("Measured: ");
       Serial.print("\t");
-
       Serial.print(measures[ROLL] - measures_offset[ROLL]);
       Serial.print("\t");
-      // Serial.print("  ");
-      // Serial.println(measures[ROLL] - measures_offset[ROLL]);
-
-      // Serial.print("Angular Motion: ");
       Serial.println(angular_motions[ROLL]);
-      // Serial.print("  ");
-      // Serial.println(angular_motions[ROLL]);
-
-      // Serial.print("Gyro Angle: ");
-      // Serial.print(gyro_angle[X]);
-      // Serial.print("  ");
-      // Serial.println(gyro_angle[Y]);
-
-      // Serial.print("Acc raw: ");
-      // Serial.print(acc_raw[X]);
-      // Serial.print("  ");
-      // Serial.println(acc_raw[Y]);
-
-      // Serial.print("Acc Offset from Calibration: ");
-      // Serial.print(acc_offset[X]);
-      // Serial.print("  ");
-      // Serial.println(acc_offset[Y]);
-
-      // Serial.print("Gyro Raw (calibrated): ");
-      // Serial.print(gyro_raw[X]);
-      // Serial.print("  ");
-      // Serial.print(gyro_raw[Y]);
-      // Serial.print("  ");
-      // Serial.println(gyro_raw[Z]);
-
-      // Serial.print("Gyro Offset from Calibration: ");
-      // Serial.print(gyro_offset[X]);
-      // Serial.print("  ");
-      // Serial.println(gyro_offset[Y]);
-      
-
       throttle_print = 0;
-      // Serial.println("-------");
     }
 }
 
-/**
- * Calculate errors used by PID controller
- */
+// Error based on measured angle and angular motion. Set point is flat heading and 0 angular velocity
 void calculateErrors() {
-    // Calculate current errors
-    errors[YAW]   = angular_motions[YAW]   - pid_set_points[YAW];
-    errors[PITCH] = angular_motions[PITCH] - pid_set_points[PITCH];
-    errors[ROLL]  = angular_motions[ROLL]  - pid_set_points[ROLL];
-
-
-    // Calculate sum of errors : Integral coefficients
-    error_sum[YAW]   += errors[YAW];
-    error_sum[PITCH] += errors[PITCH];
-    error_sum[ROLL]  += errors[ROLL];
-
-    // Keep values in acceptable range
-    error_sum[YAW]   = minMax(error_sum[YAW],   -400/Ki[YAW],   400/Ki[YAW]);
-    error_sum[PITCH] = minMax(error_sum[PITCH], -400/Ki[PITCH], 400/Ki[PITCH]);
-    error_sum[ROLL]  = minMax(error_sum[ROLL],  -400/Ki[ROLL],  400/Ki[ROLL]);
-
-    // Calculate error delta : Derivative coefficients
-    delta_err[YAW]   = errors[YAW]   - previous_error[YAW];
-    delta_err[PITCH] = errors[PITCH] - previous_error[PITCH];
-    delta_err[ROLL]  = errors[ROLL]  - previous_error[ROLL];
-
-    // Save current error as previous_error for next time
-    previous_error[YAW]   = errors[YAW];
-    previous_error[PITCH] = errors[PITCH];
-    previous_error[ROLL]  = errors[ROLL];
-}
-
-// Thomas: alternative error calculation. Does not use angular motion but 
-//         attempts to set the measure orientation to 0.0, 0.0
-
-void calculateErrorsAlternative() {
     // Calculate current errors
     errors[YAW]   = 0; //angular_motions[YAW]   - pid_set_points[YAW]; // Don't change YAW error for now
     errors[PITCH] = ((measures[PITCH] - measures_offset[PITCH]) - 0) + .5*(angular_motions[PITCH] - 0); // desired angular motion is 0
     errors[ROLL]  = ((measures[ROLL]  - measures_offset[ROLL]) - 0) + .5*(angular_motions[ROLL] - 0);
-
-    // if (abs(errors[PITCH] + errors[ROLL]) < 3) {
-    //   errors[PITCH] = 0;
-    //   errors[ROLL] = 0;
-    // }
 
     // Calculate sum of errors : Integral coefficients
     error_sum[YAW]   += errors[YAW] / 1000;
@@ -637,9 +508,8 @@ void calculateErrorsAlternative() {
  *  - accelerometer: ±8g
  *  - gyro: ±500°/s
  *
- * @see https://www.invensense.com/wp-content/uploads/2015/02/MPU-6000-Register-Map1.pdf
  */
-void setupMpu6050Registers() {
+void setupMpu9250Registers() {
     // Configure power management
     Wire.beginTransmission(MPU_ADDRESS); // Start communication with MPU
     Wire.write(0x6B);                    // Request the PWR_MGMT_1 register
@@ -666,14 +536,14 @@ void setupMpu6050Registers() {
 }
 
 /**
- * Calibrate MPU6050: take 2000 samples to calculate average offsets.
+ * Calibrate MPU9250: take 2000 samples to calculate average offsets.
  * During this step, the quadcopter needs to be static and on a horizontal surface.
  *
  * This function also sends low throttle signal to each ESC to init and prevent them beeping annoyingly.
  *
  * This function might take ~2sec for 2000 samples.
  */
-void calibrateMpu6050() {
+void calibrateMpu9250() {
     int max_samples = 2000;
 
     for (int i = 0; i < max_samples; i++) {
@@ -729,43 +599,6 @@ float minMax(float value, float min_value, float max_value) {
 }
 
 /**
- * Return whether the quadcopter is started.
- * To start the quadcopter, move the left stick in bottom left corner then, move it back in center position.
- * To stop the quadcopter move the left stick in bottom right corner.
- *
- * @return bool
- */
-bool isStarted() {
-    // When left stick is moved in the bottom left corner
-    if (status == STOPPED && to_start == 1) { // Autostart after 1 sec
-        status = STARTING;
-        Serial.println("Starting");
-        to_start = 0;
-    }
-
-    // When left stick is moved back in the center position
-    if (status == STARTING) { // Begin flying after 3 sec
-        status = STARTED;
-
-        // Reset PID controller's variables to prevent bump start
-        resetPidController();
-
-        resetGyroAngles();
-        Serial.println("Started");
-    }
-
-    // When left stick is moved in the bottom right corner
-    // if (status == STARTED && micros() > 200000000) { // stop after 200 seconds
-    //     status = STOPPED;
-    //     // Make sure to always stop motors when status is STOPPED
-    //     stopAll();
-    //     Serial.println("Stopped");
-    // }
-
-    return status == STARTED;
-}
-
-/**
  * Reset gyro's angles with accelerometer's angles.
  */
 void resetGyroAngles() {
@@ -798,72 +631,6 @@ void resetPidController() {
     previous_error[YAW]   = 0;
     previous_error[PITCH] = 0;
     previous_error[ROLL]  = 0;
-}
-
-
-/**
- * Customize mapping of controls: set here which command is on which channel and call
- * this function in setup() routine.
- */
-void configureChannelMapping() {
-    mode_mapping[YAW]      = CHANNEL4;
-    mode_mapping[PITCH]    = CHANNEL2;
-    mode_mapping[ROLL]     = CHANNEL1;
-    mode_mapping[THROTTLE] = CHANNEL3;
-}
-
-/**
- * Calculate PID set points on axis YAW, PITCH, ROLL
- */
-
-void calculateSetPoints() {
-    pid_set_points[YAW]   = calculateYawSetPoint(pulse_length[mode_mapping[YAW]], pulse_length[mode_mapping[THROTTLE]]);
-    pid_set_points[PITCH] = calculateSetPoint(measures[PITCH] - measures_offset[PITCH] , pulse_length[mode_mapping[PITCH]]);
-    pid_set_points[ROLL]  = calculateSetPoint(measures[ROLL] - measures_offset[ROLL], pulse_length[mode_mapping[ROLL]]);
-}
-
-/**
- * Calculate the PID set point in °/s
- *
- * @param float angle         Measured angle (in °) on an axis
- * @param int   channel_pulse Pulse length of the corresponding receiver channel
- * @return float
- */
-float calculateSetPoint(float angle, int channel_pulse) {
-    //float level_adjust = angle * 15; // Value 15 limits maximum angle value to ±32.8°
-    float level_adjust = angle; //Thomas: Why multiply measured angle by 15???
-    float set_point    = 0;
-
-    // Need a dead band of 16µs for better result
-    if (channel_pulse > 1508) {
-        set_point = channel_pulse - 1508;
-    } else if (channel_pulse <  1492) {
-        set_point = channel_pulse - 1492;
-    }
-
-    set_point -= level_adjust;
-    //set_point /= 3; Thomas: what is the purpose of this???
-  
-    return set_point;
-}
-
-/**
- * Calculate the PID set point of YAW axis in °/s
- *
- * @param int yaw_pulse      Receiver pulse length of yaw's channel
- * @param int throttle_pulse Receiver pulse length of throttle's channel
- * @return float
- */
-float calculateYawSetPoint(int yaw_pulse, int throttle_pulse) {
-    float set_point = 0;
-
-    // Do not yaw when turning off the motors
-    if (throttle_pulse > 1050) {
-        // There is no notion of angle on this axis as the quadcopter can turn on itself
-        set_point = calculateSetPoint(0, yaw_pulse);
-    }
-
-    return set_point;
 }
 
 /**
