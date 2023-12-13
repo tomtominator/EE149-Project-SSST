@@ -1,7 +1,6 @@
-/**
- * The software is provided "as is", without any warranty of any kind.
- * Feel free to edit it if needed.
- */
+// Modified From
+// https://github.com/lobodol/drone-flight-controller/
+
 
 // ---------------------------------------------------------------------------
 #include <Wire.h>
@@ -122,8 +121,9 @@ float battery_voltage;
 int to_start = 1;
 bool started = false;
 int throttle_print = 0;
-int throttle_last_incr = 0;
+unsigned long throttle_last_incr = 0;
 int input_throttle = 1000;
+int target_throttle = input_throttle;
 long incoming = 0;
 
 int incr = 0;
@@ -140,7 +140,7 @@ bool gyro_angle_integration = false;
  */
 void setup() {
     Serial.begin(115200); // temp change to work with xbee
-    XBee.begin(9600);
+    XBee.begin(115200);
 
     // Start I2C communication
     Wire.begin();
@@ -183,39 +183,29 @@ void setup() {
  * Main program loop
  */
 void loop() {
-    // 1. First, read raw values from MPU-6050 (in our case MPU-9250)
     readSensor();
 
-    // 2. Calculate angles from gyro & accelerometer's values
     calculateAngles();
 
-    // 3. Calculate set points of PID controller
-    calculateSetPoints(); // Changed to do nothing (no remote input except throttle)
+    calculateErrorsAlternative(); 
 
-    // 4. Calculate errors comparing angular motions to set points
-    calculateErrorsAlternative(); // Thomas: calculateErrors();
-    // Remove start sequence as it is unneeded
-    //if (isStarted()) {
-      if (!started) {
+    if (!started) {
         Serial.println("Start PID");
         started = true;
-      }
-        // Slow ramp input throttle:
-        if (throttle_last_incr - millis() > 500) {
-          input_throttle += 1;
-          throttle_last_incr = millis();
-        }
+    }
 
-        // choose how to input throttle
-        serialThrottle(); 
+    // choose how to input throttle
+    //serialThrottle(); 
+    xbeeThrottle(); // set target throttle
+  
+    // Set immediately or ramp throttle
+    //input_throttle = target_throttle;
+    rampThrottle();
+    
+    pidController(input_throttle);
 
-        // 5. Calculate motors speed with PID controller
-        pidController(input_throttle);
+    //compensateBatteryDrop();
 
-        compensateBatteryDrop();
-    //}
-
-    // 6. Apply motors speed
     applyMotorSpeed();
     
 }
@@ -239,19 +229,55 @@ void serialThrottle() {
  * Sean: Receive throttle via xbee (wireless)
  *
  */
+String RF_command = "";
 void xbeeThrottle() {
-  String receivedString = "";
-
   if (XBee.available() > 0) {  
     char data = XBee.read();
-    receivedString += data;
-    input_throttle = receivedString.toInt();
+    //Serial.println(data);
+    if (data == '.' && RF_command.length() == 4) {
+      int cmd = RF_command.toInt();
+      if (cmd >= 1000 && cmd <= 2000) {
+        target_throttle = cmd;
+      }
+      XBee.print("t:");
+      XBee.println(target_throttle);
+      // Serial.println("Throttle Set: ");
+      // Serial.println(target_throttle);
+      // Send back - recieved throttle command
+      //XBee.print("recieved");
+      RF_command = "";
+    } else if (data == '.' || RF_command.length() > 4) {
+      RF_command = "";
+    } else {
+      RF_command += data;
+    }
+    //Serial.println(RF_command);
   }
-    // Print the received string if it's not empty
-  if (receivedString.length() > 0) {
-    Serial.print("Received: ");
-    Serial.println(receivedString);
-    // You can perform further actions with the receivedString here
+}
+
+// Ramp throttle
+void rampThrottle() {
+  // Ramp up
+  if (target_throttle == input_throttle) {
+    //Serial.print("Target reached: ");
+    //Serial.println(input_throttle);
+    return;
+  } else if (target_throttle > input_throttle) { 
+    if (throttle_last_incr - millis() > 200) { // increase throttle by 1 every 50ms
+        input_throttle += 1;
+        throttle_last_incr = millis();
+        //Serial.print("Ramped Up: ");
+        //Serial.println(input_throttle);
+    }
+  }
+  // Ramp down
+  else if (target_throttle < input_throttle) {
+    if (throttle_last_incr - millis() > 20) { // decrease by 1 every 20ms
+        input_throttle -= 1;
+        throttle_last_incr = millis();
+        //Serial.print("Ramped Down: ");
+        //Serial.println(input_throttle);
+    }
   }
 }
 
@@ -279,8 +305,8 @@ void applyMotorSpeed() {
         difference = now - loop_timer;
 
         if (difference >= pulse_length_esc1) PORTD &= B11101111; // Set pin #4 LOW
-        if (difference >= 1000 /*pulse_length_esc2*/) PORTD &= B11011111; // Set pin #5 LOW
-        if (difference >= 1000 /*pulse_length_esc3*/) PORTD &= B10111111; // Set pin #6 LOW
+        if (difference >= pulse_length_esc2) PORTD &= B11011111; // Set pin #5 LOW
+        if (difference >= pulse_length_esc3) PORTD &= B10111111; // Set pin #6 LOW
         if (difference >= pulse_length_esc4) PORTD &= B01111111; // Set pin #7 LOW
     }
 }
@@ -312,9 +338,9 @@ void readSensor() {
 */ 
 void setFlat() {
   long start = millis();
-  // Do this for 4 seconds
+  // Do this for 2 seconds
 
-  while (4000 > millis() - start) {
+  while (2000 > millis() - start) {
     readSensor();
     calculateAngles();
   }
@@ -330,8 +356,8 @@ void calculateAngles() {
 
     if (initialized) {
         // Correct the drift of the gyro with the accelerometer
-        gyro_angle[X] = gyro_angle[X] * 0.9996 + acc_angle[X] * 0.0004;
-        gyro_angle[Y] = gyro_angle[Y] * 0.9996 + acc_angle[Y] * 0.0004;
+        gyro_angle[X] = gyro_angle[X] * 0.996 + acc_angle[X] * 0.004;
+        gyro_angle[Y] = gyro_angle[Y] * 0.996 + acc_angle[Y] * 0.004;
     } else {
         // At very first start, init gyro angles with accelerometer angles
         resetGyroAngles();
@@ -340,8 +366,8 @@ void calculateAngles() {
     }
 
     // To dampen the pitch and roll angles a complementary filter is used
-    measures[ROLL]  = gyro_angle[X]; //measures[ROLL]  * 0.5 + gyro_angle[X] * 0.5;
-    measures[PITCH] = gyro_angle[Y]; //measures[PITCH] * 0.5 + gyro_angle[Y] * 0.5;
+    measures[ROLL]  = measures[ROLL]  * 0.5 + gyro_angle[X] * 0.5;
+    measures[PITCH] = measures[PITCH] * 0.5 + gyro_angle[Y] * 0.5;
     measures[YAW]   = -gyro_raw[Z] / SSF_GYRO; // Store the angular motion for this axis
 
     // Apply low-pass filter (10Hz cutoff frequency)
@@ -445,8 +471,22 @@ void pidController(int input_throttle) {
     pulse_length_esc4 = minMax(pulse_length_esc4, 1000, 1200);
 
     throttle_print += 1;
+    // if (throttle_print >  300) {
+    //   XBee.println("Motors: ");
+    //   Serial.println("Send");
+    //   // XBee.println(pulse_length_esc1);
+    //   // XBee.println(pulse_length_esc2);
+    //   // XBee.println(pulse_length_esc3);
+    //   // XBee.println(pulse_length_esc4);
+    //   // XBee.print("Heading: ");
+    //   // XBee.println(measures[ROLL] - measures_offset[ROLL]);
+    //   // XBee.print("Ang V: ");
+    //   // XBee.println(angular_motions[ROLL]);
+    //   throttle_print = 0;
+    // }
     if (throttle_print > 30) {
-      //Serial.print("Throttles: ");
+      Serial.print(target_throttle);
+      Serial.print("\t");
       Serial.print((int)(pulse_length_esc1 - 1020));
       Serial.print("\t");
       // Serial.print(pulse_length_esc2);
@@ -490,13 +530,13 @@ void pidController(int input_throttle) {
       // Serial.print("Measured: ");
       Serial.print("\t");
 
-      Serial.print(measures[PITCH] - measures_offset[PITCH]);
+      Serial.print(measures[ROLL] - measures_offset[ROLL]);
       Serial.print("\t");
       // Serial.print("  ");
       // Serial.println(measures[ROLL] - measures_offset[ROLL]);
 
       // Serial.print("Angular Motion: ");
-      Serial.println(angular_motions[PITCH]);
+      Serial.println(angular_motions[ROLL]);
       // Serial.print("  ");
       // Serial.println(angular_motions[ROLL]);
 
@@ -533,45 +573,14 @@ void pidController(int input_throttle) {
     }
 }
 
-/**
- * Calculate errors used by PID controller
- */
-void calculateErrors() {
-    // Calculate current errors
-    errors[YAW]   = angular_motions[YAW]   - pid_set_points[YAW];
-    errors[PITCH] = angular_motions[PITCH] - pid_set_points[PITCH];
-    errors[ROLL]  = angular_motions[ROLL]  - pid_set_points[ROLL];
-
-
-    // Calculate sum of errors : Integral coefficients
-    error_sum[YAW]   += errors[YAW];
-    error_sum[PITCH] += errors[PITCH];
-    error_sum[ROLL]  += errors[ROLL];
-
-    // Keep values in acceptable range
-    error_sum[YAW]   = minMax(error_sum[YAW],   -400/Ki[YAW],   400/Ki[YAW]);
-    error_sum[PITCH] = minMax(error_sum[PITCH], -400/Ki[PITCH], 400/Ki[PITCH]);
-    error_sum[ROLL]  = minMax(error_sum[ROLL],  -400/Ki[ROLL],  400/Ki[ROLL]);
-
-    // Calculate error delta : Derivative coefficients
-    delta_err[YAW]   = errors[YAW]   - previous_error[YAW];
-    delta_err[PITCH] = errors[PITCH] - previous_error[PITCH];
-    delta_err[ROLL]  = errors[ROLL]  - previous_error[ROLL];
-
-    // Save current error as previous_error for next time
-    previous_error[YAW]   = errors[YAW];
-    previous_error[PITCH] = errors[PITCH];
-    previous_error[ROLL]  = errors[ROLL];
-}
-
 // Thomas: alternative error calculation. Does not use angular motion but 
 //         attempts to set the measure orientation to 0.0, 0.0
 
 void calculateErrorsAlternative() {
     // Calculate current errors
     errors[YAW]   = 0; //angular_motions[YAW]   - pid_set_points[YAW]; // Don't change YAW error for now
-    errors[PITCH] = ((measures[PITCH] - measures_offset[PITCH]) - 0);// + 2*(angular_motions[PITCH] - 0); // desired angular motion is 0
-    errors[ROLL]  = ((measures[ROLL]  - measures_offset[ROLL]) - 0);// + 2*(angular_motions[ROLL] - 0);
+    errors[PITCH] = ((measures[PITCH] - measures_offset[PITCH]) - 0) + .5*(angular_motions[PITCH] - 0); // desired angular motion is 0
+    errors[ROLL]  = ((measures[ROLL]  - measures_offset[ROLL]) - 0) + .5*(angular_motions[ROLL] - 0);
 
     // if (abs(errors[PITCH] + errors[ROLL]) < 3) {
     //   errors[PITCH] = 0;
@@ -780,64 +789,14 @@ void configureChannelMapping() {
 }
 
 /**
- * Calculate PID set points on axis YAW, PITCH, ROLL
- */
-
-void calculateSetPoints() {
-    pid_set_points[YAW]   = calculateYawSetPoint(pulse_length[mode_mapping[YAW]], pulse_length[mode_mapping[THROTTLE]]);
-    pid_set_points[PITCH] = calculateSetPoint(measures[PITCH] - measures_offset[PITCH] , pulse_length[mode_mapping[PITCH]]);
-    pid_set_points[ROLL]  = calculateSetPoint(measures[ROLL] - measures_offset[ROLL], pulse_length[mode_mapping[ROLL]]);
-}
-
-/**
- * Calculate the PID set point in °/s
- *
- * @param float angle         Measured angle (in °) on an axis
- * @param int   channel_pulse Pulse length of the corresponding receiver channel
- * @return float
- */
-float calculateSetPoint(float angle, int channel_pulse) {
-    //float level_adjust = angle * 15; // Value 15 limits maximum angle value to ±32.8°
-    float level_adjust = angle; //Thomas: Why multiply measured angle by 15???
-    float set_point    = 0;
-
-    // Need a dead band of 16µs for better result
-    if (channel_pulse > 1508) {
-        set_point = channel_pulse - 1508;
-    } else if (channel_pulse <  1492) {
-        set_point = channel_pulse - 1492;
-    }
-
-    set_point -= level_adjust;
-    //set_point /= 3; Thomas: what is the purpose of this???
-  
-    return set_point;
-}
-
-/**
- * Calculate the PID set point of YAW axis in °/s
- *
- * @param int yaw_pulse      Receiver pulse length of yaw's channel
- * @param int throttle_pulse Receiver pulse length of throttle's channel
- * @return float
- */
-float calculateYawSetPoint(int yaw_pulse, int throttle_pulse) {
-    float set_point = 0;
-
-    // Do not yaw when turning off the motors
-    if (throttle_pulse > 1050) {
-        // There is no notion of angle on this axis as the quadcopter can turn on itself
-        set_point = calculateSetPoint(0, yaw_pulse);
-    }
-
-    return set_point;
-}
-
-/**
  * Compensate battery drop applying a coefficient on output values
  */
 void compensateBatteryDrop() {
-    if (isBatteryConnected()) {
+    // battery_voltage = battery_voltage * 0.92 + (analogRead(BATTERY_PIN) + 65) * 0.09853;
+    float battery_reading = analogRead(BATTERY_PIN)* (5.0 / 1023.0);
+    battery_voltage = battery_reading /0.333; // / 0.389;
+    //Serial.println(battery_voltage);
+    if (battery_voltage > 10) {
     } else {
       Serial.println("BATTERY DEAD");
       Serial.print("Battery Voltage: ");
@@ -847,79 +806,3 @@ void compensateBatteryDrop() {
       while(true);
     }
 }
-
-/**
- * Read battery voltage & return whether the battery seems connected
- *
- * @return boolean
- */
-bool isBatteryConnected() {
-  // battery_voltage = battery_voltage * 0.92 + (analogRead(BATTERY_PIN) + 65) * 0.09853;
-  float battery_reading = analogRead(BATTERY_PIN)* (5.0 / 1023.0);
-  battery_voltage = battery_reading /0.333; // / 0.389;
-  //Serial.println(battery_voltage);
-  return battery_voltage > 10;
-}
-
-/**
- * This Interrupt Sub Routine is called each time input 8, 9, 10 or 11 changed state.
- * Read the receiver signals in order to get flight instructions.
- *
- * This routine must be as fast as possible to prevent main program to be messed up.
- * The trick here is to use port registers to read pin state.
- * Doing (PINB & B00000001) is the same as digitalRead(8) with the advantage of using less CPU loops.
- * It is less convenient but more efficient, which is the most important here.
- *
- * @see https://www.arduino.cc/en/Reference/PortManipulation
- * @see https://www.firediy.fr/article/utiliser-sa-radiocommande-avec-un-arduino-drone-ch-6
- */
-// ISR(PCINT0_vect) {
-//         while(1) {
-//           Serial.println("ERROR ISR CALLED!!");
-//         }
-//         current_time = micros();
-
-//         // Channel 1 -------------------------------------------------
-//         if (PINB & B00000001) {                                        // Is input 8 high ?
-//             if (previous_state[CHANNEL1] == LOW) {                     // Input 8 changed from 0 to 1 (rising edge)
-//                 previous_state[CHANNEL1] = HIGH;                       // Save current state
-//                 timer[CHANNEL1] = current_time;                        // Save current time
-//             }
-//         } else if (previous_state[CHANNEL1] == HIGH) {                 // Input 8 changed from 1 to 0 (falling edge)
-//             previous_state[CHANNEL1] = LOW;                            // Save current state
-//             pulse_length[CHANNEL1] = current_time - timer[CHANNEL1];   // Calculate pulse duration & save it
-//         }
-
-//         // Channel 2 -------------------------------------------------
-//         if (PINB & B00000010) {                                        // Is input 9 high ?
-//             if (previous_state[CHANNEL2] == LOW) {                     // Input 9 changed from 0 to 1 (rising edge)
-//                 previous_state[CHANNEL2] = HIGH;                       // Save current state
-//                 timer[CHANNEL2] = current_time;                        // Save current time
-//             }
-//         } else if (previous_state[CHANNEL2] == HIGH) {                 // Input 9 changed from 1 to 0 (falling edge)
-//             previous_state[CHANNEL2] = LOW;                            // Save current state
-//             pulse_length[CHANNEL2] = current_time - timer[CHANNEL2];   // Calculate pulse duration & save it
-//         }
-
-//         // Channel 3 -------------------------------------------------
-//         if (PINB & B00000100) {                                        // Is input 10 high ?
-//             if (previous_state[CHANNEL3] == LOW) {                     // Input 10 changed from 0 to 1 (rising edge)
-//                 previous_state[CHANNEL3] = HIGH;                       // Save current state
-//                 timer[CHANNEL3] = current_time;                        // Save current time
-//             }
-//         } else if (previous_state[CHANNEL3] == HIGH) {                 // Input 10 changed from 1 to 0 (falling edge)
-//             previous_state[CHANNEL3] = LOW;                            // Save current state
-//             pulse_length[CHANNEL3] = current_time - timer[CHANNEL3];   // Calculate pulse duration & save it
-//         }
-
-//         // Channel 4 -------------------------------------------------
-//         if (PINB & B00001000) {                                        // Is input 11 high ?
-//             if (previous_state[CHANNEL4] == LOW) {                     // Input 11 changed from 0 to 1 (rising edge)
-//                 previous_state[CHANNEL4] = HIGH;                       // Save current state
-//                 timer[CHANNEL4] = current_time;                        // Save current time
-//             }
-//         } else if (previous_state[CHANNEL4] == HIGH) {                 // Input 11 changed from 1 to 0 (falling edge)
-//             previous_state[CHANNEL4] = LOW;                            // Save current state
-//             pulse_length[CHANNEL4] = current_time - timer[CHANNEL4];   // Calculate pulse duration & save it
-//         }
-// }
