@@ -18,13 +18,66 @@ void loop() {
   // sendMessage("Hello from XBee Transmitter");
   if (Serial.available()) {
     throttle = Serial.readString();
+    // handshake(throttle);
+    // if (throttle == "1000") {
+    // stop();
+    // }
+    // sendMessage(throttle);
   }
   sendMessage(throttle);
-
   readMessage();
 
   // Wait for a moment before sending the next message
-  delay(2000);
+  // delay(200);
+}
+
+void handshake(String throttle) {
+  String ackString = "t:";
+  ackString += throttle;
+  String receivedString = "";
+  // while (receivedString.indexOf(ackString) == -1) {
+  for (int i = 0; i < 100; i++) {
+    // Serial.print("INDEX: ");
+    // Serial.println(receivedString.indexOf(ackString) == -1);
+
+    // while (receivedString != ackString) {
+    sendMessage(throttle);
+    receivedString = "";
+    // while (Xbee.available() > 0) {
+    
+    for (int i = 0; i < 100; i++) {
+      while (Xbee.available() > 0) {
+        char data = Xbee.read();
+        receivedString += data;
+      }
+    }
+
+    if(receivedString.indexOf(ackString) != -1){
+      Serial.println("ACK FOUND");
+      break;
+    }
+
+    // }
+    Serial.print("Reading message: ");
+    Serial.println(receivedString);
+    // delay(200);
+  }
+  Serial.print("FAILED HANDSHAKE FOR: ");
+  Serial.println(throttle);
+}
+
+void stop() {
+  // String receivedString = "";
+  // while (receivedString != "t:1000") {
+  //   receivedString = "";
+  //   while (Xbee.available() > 0) {
+  //     char data = Xbee.read();
+  //     receivedString += data;
+  //   }
+  // }
+  Serial.println("STOP RECIEVED");
+  while (true)
+    ;
 }
 
 void readMessage() {
@@ -55,7 +108,7 @@ void sendMessage(const String message) {
   // Serial.write(48);
   // Serial.write(48);
   // Serial.write(46);
-  
+
   // Xbee.print(message);
   // Xbee.print('\n'); // Add a newline character to indicate the end of the message
 }
