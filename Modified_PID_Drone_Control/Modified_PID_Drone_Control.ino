@@ -121,8 +121,9 @@ float battery_voltage;
 int to_start = 1;
 bool started = false;
 int throttle_print = 0;
-int throttle_last_incr = 0;
+unsigned long throttle_last_incr = 0;
 int input_throttle = 1000;
+int target_throttle = input_throttle;
 long incoming = 0;
 
 int incr = 0;
@@ -195,24 +196,23 @@ void loop() {
     calculateErrorsAlternative(); // Thomas: calculateErrors();
     // Remove start sequence as it is unneeded
     //if (isStarted()) {
-      if (!started) {
+    if (!started) {
         Serial.println("Start PID");
         started = true;
-      }
-        // Slow ramp input throttle:
-        if (throttle_last_incr - millis() > 500) {
-          input_throttle += 1;
-          throttle_last_incr = millis();
-        }
+    }
 
-        // choose how to input throttle
-        serialThrottle(); 
+    // choose how to input throttle
+    //serialThrottle(); 
+    xbeeThrottle(); // set target throttle
+  
+    // Set immediately or ramp throttle
+    //input_throttle = target_throttle;
+    rampThrottle();
+    
+    // 5. Calculate motors speed with PID controller
+    pidController(input_throttle);
 
-        // 5. Calculate motors speed with PID controller
-        pidController(input_throttle);
-
-        compensateBatteryDrop();
-    //}
+    compensateBatteryDrop();
 
     // 6. Apply motors speed
     applyMotorSpeed();
@@ -238,19 +238,53 @@ void serialThrottle() {
  * Sean: Receive throttle via xbee (wireless)
  *
  */
+String RF_command = "";
 void xbeeThrottle() {
-  String receivedString = "";
-
   if (XBee.available() > 0) {  
     char data = XBee.read();
-    receivedString += data;
-    input_throttle = receivedString.toInt();
+    //Serial.println(data);
+    if (data == '.' && RF_command.length() == 4) {
+      int cmd = RF_command.toInt();
+      if (cmd >= 1000 && cmd <= 2000) {
+        target_throttle = cmd;
+      }
+      Serial.print("Throttle set: ");
+      Serial.println(target_throttle);
+      // Send back - recieved throttle command
+      //XBee.print("recieved");
+      RF_command = "";
+    } else if (data == '.' || RF_command.length() > 4) {
+      RF_command = "";
+    } else {
+      RF_command += data;
+    }
+    //Serial.println(RF_command);
   }
-    // Print the received string if it's not empty
-  if (receivedString.length() > 0) {
-    Serial.print("Received: ");
-    Serial.println(receivedString);
-    // You can perform further actions with the receivedString here
+}
+
+// Ramp throttle
+void rampThrottle() {
+  // Ramp up
+  if (target_throttle == input_throttle) {
+    //Serial.print("Target reached: ");
+    //Serial.println(input_throttle);
+    return;
+  } else if (target_throttle > input_throttle) { 
+    if (throttle_last_incr - millis() > 50) { // increase throttle by 1 every 50ms
+        input_throttle += 1;
+        throttle_last_incr = millis();
+        //Serial.print("Ramped Up: ");
+        //Serial.println(input_throttle);
+    }
+  }
+  // Ramp down
+  else if (target_throttle < input_throttle) {
+    if (throttle_last_incr - millis() > 20) { // decrease by 1 every 20ms
+        input_throttle -= 1;
+        throttle_last_incr = millis();
+        //Serial.print("Ramped Down: ");
+        //Serial.println(input_throttle);
+    }
   }
 }
 
@@ -311,9 +345,9 @@ void readSensor() {
 */ 
 void setFlat() {
   long start = millis();
-  // Do this for 4 seconds
+  // Do this for 2 seconds
 
-  while (4000 > millis() - start) {
+  while (2000 > millis() - start) {
     readSensor();
     calculateAngles();
   }
@@ -444,7 +478,7 @@ void pidController(int input_throttle) {
     pulse_length_esc4 = minMax(pulse_length_esc4, 1000, 1200);
 
     throttle_print += 1;
-    if (throttle_print > 30) {
+    if (false && throttle_print > 30) {
       //Serial.print("Throttles: ");
       Serial.print((int)(pulse_length_esc1 - 1020));
       Serial.print("\t");
@@ -850,82 +884,3 @@ void compensateBatteryDrop() {
       while(true);
     }
 }
-<<<<<<< HEAD
-=======
-
-/**
- * Read battery voltage & return whether the battery seems connected
- *
- * @return boolean
- */
-bool isBatteryConnected() {
-  // battery_voltage = battery_voltage * 0.92 + (analogRead(BATTERY_PIN) + 65) * 0.09853;
-  float battery_reading = analogRead(BATTERY_PIN)* (5.0 / 1023.0);
-  battery_voltage = battery_reading /0.333; // / 0.389;
-  //Serial.println(battery_voltage);
-  return battery_voltage > 10;
-}
-
-/**
- * This Interrupt Sub Routine is called each time input 8, 9, 10 or 11 changed state.
- * Read the receiver signals in order to get flight instructions.
- *
- * This routine must be as fast as possible to prevent main program to be messed up.
- * The trick here is to use port registers to read pin state.
- * Doing (PINB & B00000001) is the same as digitalRead(8) with the advantage of using less CPU loops.
- * It is less convenient but more efficient, which is the most important here.
- *
- * @see https://www.arduino.cc/en/Reference/PortManipulation
- * @see https://www.firediy.fr/article/utiliser-sa-radiocommande-avec-un-arduino-drone-ch-6
- */
-// ISR(PCINT0_vect) {
-//         while(1) {
-//           Serial.println("ERROR ISR CALLED!!");
-//         }
-//         current_time = micros();
-
-//         // Channel 1 -------------------------------------------------
-//         if (PINB & B00000001) {                                        // Is input 8 high ?
-//             if (previous_state[CHANNEL1] == LOW) {                     // Input 8 changed from 0 to 1 (rising edge)
-//                 previous_state[CHANNEL1] = HIGH;                       // Save current state
-//                 timer[CHANNEL1] = current_time;                        // Save current time
-//             }
-//         } else if (previous_state[CHANNEL1] == HIGH) {                 // Input 8 changed from 1 to 0 (falling edge)
-//             previous_state[CHANNEL1] = LOW;                            // Save current state
-//             pulse_length[CHANNEL1] = current_time - timer[CHANNEL1];   // Calculate pulse duration & save it
-//         }
-
-//         // Channel 2 -------------------------------------------------
-//         if (PINB & B00000010) {                                        // Is input 9 high ?
-//             if (previous_state[CHANNEL2] == LOW) {                     // Input 9 changed from 0 to 1 (rising edge)
-//                 previous_state[CHANNEL2] = HIGH;                       // Save current state
-//                 timer[CHANNEL2] = current_time;                        // Save current time
-//             }
-//         } else if (previous_state[CHANNEL2] == HIGH) {                 // Input 9 changed from 1 to 0 (falling edge)
-//             previous_state[CHANNEL2] = LOW;                            // Save current state
-//             pulse_length[CHANNEL2] = current_time - timer[CHANNEL2];   // Calculate pulse duration & save it
-//         }
-
-//         // Channel 3 -------------------------------------------------
-//         if (PINB & B00000100) {                                        // Is input 10 high ?
-//             if (previous_state[CHANNEL3] == LOW) {                     // Input 10 changed from 0 to 1 (rising edge)
-//                 previous_state[CHANNEL3] = HIGH;                       // Save current state
-//                 timer[CHANNEL3] = current_time;                        // Save current time
-//             }
-//         } else if (previous_state[CHANNEL3] == HIGH) {                 // Input 10 changed from 1 to 0 (falling edge)
-//             previous_state[CHANNEL3] = LOW;                            // Save current state
-//             pulse_length[CHANNEL3] = current_time - timer[CHANNEL3];   // Calculate pulse duration & save it
-//         }
-
-//         // Channel 4 -------------------------------------------------
-//         if (PINB & B00001000) {                                        // Is input 11 high ?
-//             if (previous_state[CHANNEL4] == LOW) {                     // Input 11 changed from 0 to 1 (rising edge)
-//                 previous_state[CHANNEL4] = HIGH;                       // Save current state
-//                 timer[CHANNEL4] = current_time;                        // Save current time
-//             }
-//         } else if (previous_state[CHANNEL4] == HIGH) {                 // Input 11 changed from 1 to 0 (falling edge)
-//             previous_state[CHANNEL4] = LOW;                            // Save current state
-//             pulse_length[CHANNEL4] = current_time - timer[CHANNEL4];   // Calculate pulse duration & save it
-//         }
-// }
->>>>>>> PID-with-RF
