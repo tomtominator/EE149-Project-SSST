@@ -204,7 +204,7 @@ void loop() {
 
   pidController(input_throttle);
 
-  //compensateBatteryDrop();
+//  compensateBatteryDrop();
 
   applyMotorSpeed();
 
@@ -232,11 +232,13 @@ void serialThrottle() {
 String RF_command = "";
 int times_seen = 0;
 int prev_cmd = 1000;
+
 void xbeeThrottle() {
   if (XBee.available() > 0) {
     char data = XBee.read();
     //Serial.println(data);
-    if (data == '.' && RF_command.length() == 4) {
+    
+    if (data == '.' && RF_command.length() == 4) { // syntax failsafe
       int cmd = RF_command.toInt();
       if (cmd == prev_cmd) {
         times_seen += 1;
@@ -244,16 +246,29 @@ void xbeeThrottle() {
         times_seen = 0;
         prev_cmd = cmd;
       }
-      if (cmd >= 1000 && cmd <= 2000 && times_seen > 5) {
+      if (cmd >= 1000 && cmd <= 2000 && times_seen > 5) { // 5 continuous msgs
         target_throttle = cmd;
       }
-      //      XBee.println("t:"+ target_throttle);
-//      XBee.println('c');
-      //      XBee.write('c');
-      Serial.println("Throttle Set: ");
-      Serial.println(target_throttle);
-      // Send back - recieved throttle command
-      //XBee.print("recieved");
+      if (cmd == 911) {
+        target_throttle = 1000;
+      }
+      
+      XBee.print("M1");
+      XBee.println(pulse_length_esc1);
+      XBee.print("M2");
+      XBee.println(pulse_length_esc2);
+      XBee.print("M3");
+      XBee.println(pulse_length_esc3);
+      XBee.print("M4");
+      XBee.println(pulse_length_esc4);
+      XBee.print("Head");
+      XBee.println(measures[ROLL] - measures_offset[ROLL]);
+      XBee.print("Ang");
+      XBee.println(angular_motions[ROLL]);
+      XBee.print("V");
+      XBee.print(battery_voltage);
+      Serial.print("V");
+      Serial.println(battery_voltage);
       RF_command = "";
     } else if (data == '.' || RF_command.length() > 4) {
       RF_command = "";
@@ -480,29 +495,30 @@ void pidController(int input_throttle) {
   pulse_length_esc4 = minMax(pulse_length_esc4, 1000, 1200);
 
   throttle_print += 1;
-  // if (throttle_print >  300) {
-  //   XBee.println("Motors: ");
-  //   Serial.println("Send");
-  //   // XBee.println(pulse_length_esc1);
-  //   // XBee.println(pulse_length_esc2);
-  //   // XBee.println(pulse_length_esc3);
-  //   // XBee.println(pulse_length_esc4);
-  //   // XBee.print("Heading: ");
-  //   // XBee.println(measures[ROLL] - measures_offset[ROLL]);
-  //   // XBee.print("Ang V: ");
-  //   // XBee.println(angular_motions[ROLL]);
-  //   throttle_print = 0;
-  // }
+   if (throttle_print >  300) {
+//     XBee.println("Motors: ");
+//     Serial.println("Send");
+//      XBee.println(pulse_length_esc1);
+//      XBee.println(pulse_length_esc2);
+//      XBee.println(pulse_length_esc3);
+//      XBee.println(pulse_length_esc4);
+     // XBee.print("Heading: ");
+     // XBee.println(measures[ROLL] - measures_offset[ROLL]);
+     // XBee.print("Ang V: ");
+     // XBee.println(angular_motions[ROLL]);
+     throttle_print = 0;
+   }
   if (throttle_print > 30) {
-    Serial.print(target_throttle);
-    Serial.print("\t");
-    Serial.print((int)(pulse_length_esc1 - 1020));
-    Serial.print("\t");
-    // Serial.print(pulse_length_esc2);
-    // Serial.print("  ");
-    // Serial.print(pulse_length_esc3);
-    // Serial.print("  ");
-    Serial.print((int)(pulse_length_esc4 - 1020));
+      Serial.println("Throttle Set: ");
+      Serial.print((int)target_throttle-1000);
+      Serial.print("\t");
+      Serial.print((int)(pulse_length_esc1 - 1000));
+      Serial.print("\t");
+      Serial.print((int)pulse_length_esc2-1000);
+      Serial.print("  ");
+      Serial.print((int)pulse_length_esc3-1000);
+      Serial.print("  ");
+      Serial.print((int)(pulse_length_esc4 - 1000));
 
     // Serial.print("PID: ");
     // Serial.print(pitch_pid);
@@ -537,15 +553,15 @@ void pidController(int input_throttle) {
     // Serial.println(pid_set_points[YAW]);
 
     // Serial.print("Measured: ");
-    Serial.print("\t");
+      Serial.print("\t");
 
-    Serial.print(measures[ROLL] - measures_offset[ROLL]);
-    Serial.print("\t");
+      Serial.print(measures[ROLL] - measures_offset[ROLL]);
+      Serial.print("\t");
     // Serial.print("  ");
     // Serial.println(measures[ROLL] - measures_offset[ROLL]);
 
     // Serial.print("Angular Motion: ");
-    Serial.println(angular_motions[ROLL]);
+      Serial.println(angular_motions[ROLL]);
     // Serial.print("  ");
     // Serial.println(angular_motions[ROLL]);
 
@@ -805,7 +821,7 @@ void compensateBatteryDrop() {
   float battery_reading = analogRead(BATTERY_PIN) * (5.0 / 1023.0);
   battery_voltage = battery_reading / 0.333; // / 0.389;
   //Serial.println(battery_voltage);
-  if (battery_voltage > 10) {
+  if (battery_voltage > 11) {
   } else {
     Serial.println("BATTERY DEAD");
     Serial.print("Battery Voltage: ");
