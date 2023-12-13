@@ -2,11 +2,11 @@ import cv2
 import numpy as np
 import urllib.request
 import serial
-
+import time
+from xbee import XBee
 
 url = 'http://192.168.4.1/cam-hi.jpg'
-
-port = '/dev/cu.usbserial-0001'  # Modify this with the appropriate serial port
+port = '/dev/cu.usbserial-1130'  # Modify this with the appropriate serial port
 baud_rate = 115200  # Modify this with the appropriate baud rate
 
 cap = cv2.VideoCapture(url)
@@ -27,93 +27,114 @@ net = cv2.dnn.readNetFromDarknet(modelConfig, modelWeights)
 net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
 net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
-door_opened = False
-door_closed = False
-flag=0
-flag1=0
-Ccounter=0 #for counting cars
+up = False
+down = False
+x1, y1 = 0, 500
+x2, y2 = 800, 500
+xbee_port = serial.Serial(port, baud_rate)
+xbee = XBee(xbee_port)
 
-line1_x1, line1_y1, line1_x2, line1_y2 = 200, 0, 200, 600  # Coordinates for line 1 (x1, y1, x2, y2)
-line2_x1, line2_y1, line2_x2, line2_y2 = 600, 0, 600, 600  # Coordinates for line 2 (x1, y1, x2, y2)
+# def read(num_char = 1):
+#     string = xbee_port.read(num_char)
+#     return string.decode('ascii')
 
-# Establish serial connection with Arduino Nano
-arduino = serial.Serial(port, baud_rate, timeout=1)
+# def send(angle):
+#     command = str.encode(angle+"\n")
+#     #command = f"{angle}\n"  # Append newline character to the command
+#     xbee_port.write(command)
 
-def read(num_char = 1):
-    string = arduino.read(num_char)
-    return string.decode('ascii')
-
-def send(angle):
-    command = f"{angle}\n"  # Append newline character to the command
-    arduino.write(command.encode('utf-8'))
+# def xbeeSend(message):
+#     destination_address = b'\x13\xA2\x00\x40\xD4\xF0\xA1'
+#     try:
+#         xbee.tx(dest_addr=destination_address, data=message)
+#         print("Message sent successfully.")
+#     except:
+#         print("Error sending message")
 
 
 def findObject(outputs, img):
-    global door_opened, door_closed,flag, Ccounter# Declare the variables as global
-
+    global up, down
     hT, wT, cT = img.shape
     bbox = []
     classIds = []
     confs = []
 
+    # misc
+    message = "1000"
+    destination_address = b'\x13\xA2\x00\x40\xD4\xF0\xA1'
+    #destination_address = b'\x13\xA2\x00\x40\xD4\xF0\x60'
+    try:
+        xbee.tx(dest_addr=destination_address, data=message)
+        print("Message sent successfully.")
+    except:
+        print("Error sending message")
     for output in outputs:
         for det in output:
             scores = det[5:]
             classId = np.argmax(scores)
             confidence = scores[classId]
-
             if classId == carClassId and confidence > confThreshold:
                 w, h = int(det[2] * wT), int(det[3] * hT)
                 x, y = int((det[0] * wT) - w / 2), int((det[1] * hT) - h / 2)
                 bbox.append([x, y, w, h])
                 classIds.append(classId)
                 confs.append(float(confidence))
-
-             
-
+            else:
+                #xbeeSend("1000")
+                message = "1000"
+                destination_address = b'\x13\xA2\x00\x40\xD4\xF0\xA1'
+                #destination_address = b'\x13\xA2\x00\x40\xD4\xF0\x60'
+                try:
+                    xbee.tx(dest_addr=destination_address, data=message)
+                    print("Message sent successfully.")
+                except:
+                    print("Error sending message")
+                #time.sleep(1)
+                # try:
+                #     printer = xbee_port.readline().decode('ascii')
+                # except:
+                #     printer = "unable to decode"
+                # print(printer) 
+                
+                #print("Off")
     indices = cv2.dnn.NMSBoxes(bbox, confs, confThreshold, nmsThreshold)
-
     for i in indices:
         i = i
         box = bbox[i]
         x, y, w, h = box[0], box[1], box[2], box[3]
         center_x = x + w // 2
-        
         center_y = y + h // 2
         cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 255), 2)
         cv2.putText(img, f'{classNames[classIds[i]].upper()} {int(confs[i] * 100)}%', (x, y - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
         cv2.circle(img, (center_x, center_y), 10, (0, 255, 0), -1)  # Draw a dot at the center of the bounding box
-        
-        if center_x > line1_x1 and center_x < line2_x1:
-            Left = True
-            flag=1
-            print("Left")
-            send(1)  #send or left or right
-            try:
-                printer = arduino.readline().decode('ascii')
-            except:
-                printer = "unable to decode"
-            print(printer)
-            
-                    
-        if  center_x > line2_x1:
-            Right = True
-            print("Right")
-            send(2)  
-            try:
-                printer = arduino.readline().decode('ascii')
-            except:
-                printer = "unable to decode"
-            print(printer)
-             
+        if center_y > y1:
+            print("Up")
+            #xbeeSend("1025") 
+            #send("1010")  #send or left or right
+            # try:
+            #     printer = xbee_port.readline().decode('ascii')
+            # except:
+            #     printer = "unable to decode"
+            # print(printer) 
+        elif center_y < y1-400:
+            print("Down")
+            #xbeeSend("1000")  
+            # try:
+            #     printer = xbee_port.readline().decode('ascii')
+            # except:
+            #     printer = "unable to decode"
+            # print(printer)
+        else:
+            #xbeeSend("1000")  
+            print("Center")
         
 
     # Draw line 1
-    cv2.line(img, (line1_x1, line1_y1), (line1_x2, line1_y2), (0, 255, 0), 2)
+    cv2.line(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
     # Draw line 2
-    cv2.line(img, (line2_x1, line2_y1), (line2_x2, line2_y2), (0, 0, 255), 2)
+    cv2.line(img, (x1, y1-400), (x2, y2-400), (0, 0, 255), 2)
 
 
 while True:
@@ -128,11 +149,9 @@ while True:
     outputs = net.forward(outputNames)
     findObject(outputs, im)
     cv2.imshow('Image', im)
-
-    if door_opened and door_closed:
-        door_opened = False
-        door_closed = False
-        
+    if up and down:
+        up = False
+        down = False
     if cv2.waitKey(1) == ord('q'):
         break
 
