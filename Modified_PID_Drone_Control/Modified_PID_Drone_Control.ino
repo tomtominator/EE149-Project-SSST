@@ -1,7 +1,6 @@
-/**
- * The software is provided "as is", without any warranty of any kind.
- * Feel free to edit it if needed.
- */
+// Modified From
+// https://github.com/lobodol/drone-flight-controller/
+
 
 // ---------------------------------------------------------------------------
 #include <Wire.h>
@@ -245,8 +244,8 @@ void applyMotorSpeed() {
         difference = now - loop_timer;
 
         if (difference >= pulse_length_esc1) PORTD &= B11101111; // Set pin #4 LOW
-        if (difference >= 1000 /*pulse_length_esc2*/) PORTD &= B11011111; // Set pin #5 LOW
-        if (difference >= 1000 /*pulse_length_esc3*/) PORTD &= B10111111; // Set pin #6 LOW
+        if (difference >= pulse_length_esc2) PORTD &= B11011111; // Set pin #5 LOW
+        if (difference >= pulse_length_esc3) PORTD &= B10111111; // Set pin #6 LOW
         if (difference >= pulse_length_esc4) PORTD &= B01111111; // Set pin #7 LOW
     }
 }
@@ -296,8 +295,8 @@ void calculateAngles() {
 
     if (initialized) {
         // Correct the drift of the gyro with the accelerometer
-        gyro_angle[X] = gyro_angle[X] * 0.9996 + acc_angle[X] * 0.0004;
-        gyro_angle[Y] = gyro_angle[Y] * 0.9996 + acc_angle[Y] * 0.0004;
+        gyro_angle[X] = gyro_angle[X] * 0.996 + acc_angle[X] * 0.004;
+        gyro_angle[Y] = gyro_angle[Y] * 0.996 + acc_angle[Y] * 0.004;
     } else {
         // At very first start, init gyro angles with accelerometer angles
         resetGyroAngles();
@@ -306,8 +305,8 @@ void calculateAngles() {
     }
 
     // To dampen the pitch and roll angles a complementary filter is used
-    measures[ROLL]  = gyro_angle[X]; //measures[ROLL]  * 0.5 + gyro_angle[X] * 0.5;
-    measures[PITCH] = gyro_angle[Y]; //measures[PITCH] * 0.5 + gyro_angle[Y] * 0.5;
+    measures[ROLL]  = measures[ROLL]  * 0.5 + gyro_angle[X] * 0.5;
+    measures[PITCH] = measures[PITCH] * 0.5 + gyro_angle[Y] * 0.5;
     measures[YAW]   = -gyro_raw[Z] / SSF_GYRO; // Store the angular motion for this axis
 
     // Apply low-pass filter (10Hz cutoff frequency)
@@ -456,13 +455,13 @@ void pidController(int input_throttle) {
       // Serial.print("Measured: ");
       Serial.print("\t");
 
-      Serial.print(measures[PITCH] - measures_offset[PITCH]);
+      Serial.print(measures[ROLL] - measures_offset[ROLL]);
       Serial.print("\t");
       // Serial.print("  ");
       // Serial.println(measures[ROLL] - measures_offset[ROLL]);
 
       // Serial.print("Angular Motion: ");
-      Serial.println(angular_motions[PITCH]);
+      Serial.println(angular_motions[ROLL]);
       // Serial.print("  ");
       // Serial.println(angular_motions[ROLL]);
 
@@ -536,8 +535,8 @@ void calculateErrors() {
 void calculateErrorsAlternative() {
     // Calculate current errors
     errors[YAW]   = 0; //angular_motions[YAW]   - pid_set_points[YAW]; // Don't change YAW error for now
-    errors[PITCH] = ((measures[PITCH] - measures_offset[PITCH]) - 0);// + 2*(angular_motions[PITCH] - 0); // desired angular motion is 0
-    errors[ROLL]  = ((measures[ROLL]  - measures_offset[ROLL]) - 0);// + 2*(angular_motions[ROLL] - 0);
+    errors[PITCH] = ((measures[PITCH] - measures_offset[PITCH]) - 0) + .5*(angular_motions[PITCH] - 0); // desired angular motion is 0
+    errors[ROLL]  = ((measures[ROLL]  - measures_offset[ROLL]) - 0) + .5*(angular_motions[ROLL] - 0);
 
     // if (abs(errors[PITCH] + errors[ROLL]) < 3) {
     //   errors[PITCH] = 0;
@@ -803,7 +802,11 @@ float calculateYawSetPoint(int yaw_pulse, int throttle_pulse) {
  * Compensate battery drop applying a coefficient on output values
  */
 void compensateBatteryDrop() {
-    if (isBatteryConnected()) {
+    // battery_voltage = battery_voltage * 0.92 + (analogRead(BATTERY_PIN) + 65) * 0.09853;
+    float battery_reading = analogRead(BATTERY_PIN)* (5.0 / 1023.0);
+    battery_voltage = battery_reading /0.333; // / 0.389;
+    //Serial.println(battery_voltage);
+    if (battery_voltage > 10) {
     } else {
       Serial.println("BATTERY DEAD");
       Serial.print("Battery Voltage: ");
@@ -812,80 +815,4 @@ void compensateBatteryDrop() {
       stopAll();
       while(true);
     }
-}
-
-/**
- * Read battery voltage & return whether the battery seems connected
- *
- * @return boolean
- */
-bool isBatteryConnected() {
-  // battery_voltage = battery_voltage * 0.92 + (analogRead(BATTERY_PIN) + 65) * 0.09853;
-  float battery_reading = analogRead(BATTERY_PIN)* (5.0 / 1023.0);
-  battery_voltage = battery_reading /0.333; // / 0.389;
-  //Serial.println(battery_voltage);
-  return battery_voltage > 10;
-}
-
-/**
- * This Interrupt Sub Routine is called each time input 8, 9, 10 or 11 changed state.
- * Read the receiver signals in order to get flight instructions.
- *
- * This routine must be as fast as possible to prevent main program to be messed up.
- * The trick here is to use port registers to read pin state.
- * Doing (PINB & B00000001) is the same as digitalRead(8) with the advantage of using less CPU loops.
- * It is less convenient but more efficient, which is the most important here.
- *
- * @see https://www.arduino.cc/en/Reference/PortManipulation
- * @see https://www.firediy.fr/article/utiliser-sa-radiocommande-avec-un-arduino-drone-ch-6
- */
-ISR(PCINT0_vect) {
-        while(1) {
-          Serial.println("ERROR ISR CALLED!!");
-        }
-        current_time = micros();
-
-        // Channel 1 -------------------------------------------------
-        if (PINB & B00000001) {                                        // Is input 8 high ?
-            if (previous_state[CHANNEL1] == LOW) {                     // Input 8 changed from 0 to 1 (rising edge)
-                previous_state[CHANNEL1] = HIGH;                       // Save current state
-                timer[CHANNEL1] = current_time;                        // Save current time
-            }
-        } else if (previous_state[CHANNEL1] == HIGH) {                 // Input 8 changed from 1 to 0 (falling edge)
-            previous_state[CHANNEL1] = LOW;                            // Save current state
-            pulse_length[CHANNEL1] = current_time - timer[CHANNEL1];   // Calculate pulse duration & save it
-        }
-
-        // Channel 2 -------------------------------------------------
-        if (PINB & B00000010) {                                        // Is input 9 high ?
-            if (previous_state[CHANNEL2] == LOW) {                     // Input 9 changed from 0 to 1 (rising edge)
-                previous_state[CHANNEL2] = HIGH;                       // Save current state
-                timer[CHANNEL2] = current_time;                        // Save current time
-            }
-        } else if (previous_state[CHANNEL2] == HIGH) {                 // Input 9 changed from 1 to 0 (falling edge)
-            previous_state[CHANNEL2] = LOW;                            // Save current state
-            pulse_length[CHANNEL2] = current_time - timer[CHANNEL2];   // Calculate pulse duration & save it
-        }
-
-        // Channel 3 -------------------------------------------------
-        if (PINB & B00000100) {                                        // Is input 10 high ?
-            if (previous_state[CHANNEL3] == LOW) {                     // Input 10 changed from 0 to 1 (rising edge)
-                previous_state[CHANNEL3] = HIGH;                       // Save current state
-                timer[CHANNEL3] = current_time;                        // Save current time
-            }
-        } else if (previous_state[CHANNEL3] == HIGH) {                 // Input 10 changed from 1 to 0 (falling edge)
-            previous_state[CHANNEL3] = LOW;                            // Save current state
-            pulse_length[CHANNEL3] = current_time - timer[CHANNEL3];   // Calculate pulse duration & save it
-        }
-
-        // Channel 4 -------------------------------------------------
-        if (PINB & B00001000) {                                        // Is input 11 high ?
-            if (previous_state[CHANNEL4] == LOW) {                     // Input 11 changed from 0 to 1 (rising edge)
-                previous_state[CHANNEL4] = HIGH;                       // Save current state
-                timer[CHANNEL4] = current_time;                        // Save current time
-            }
-        } else if (previous_state[CHANNEL4] == HIGH) {                 // Input 11 changed from 1 to 0 (falling edge)
-            previous_state[CHANNEL4] = LOW;                            // Save current state
-            pulse_length[CHANNEL4] = current_time - timer[CHANNEL4];   // Calculate pulse duration & save it
-        }
 }
