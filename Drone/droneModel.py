@@ -3,7 +3,7 @@ import numpy as np
 import urllib.request
 import time
 import serial
-from xbee import XBee
+from xbee import ZigBee
 
 url = 'http://192.168.4.1/cam-hi.jpg'
 port = '/dev/cu.usbserial-1130'  # Modify this with the appropriate serial port
@@ -19,7 +19,7 @@ classNames = []
 with open(classesfile, 'rt') as f:
     classNames = f.read().rstrip('\n').split('\n')
 
-carClassId = classNames.index('cell phone')  # Get the class ID for car
+Object = classNames.index('cell phone')  
 
 modelConfig = 'yolov3.cfg'
 modelWeights = 'yolov3.weights'
@@ -31,66 +31,91 @@ up = False
 down = False
 x1, y1 = 0, 500
 x2, y2 = 800, 500
+current  = 1000
+hover = 1000
+stop = ".1000."
+ramp = 10
+
+
+
+def rampUp(current,goal):
+    if(current >= goal):
+        return "."+str(goal)+"."
+    else:
+        current += ramp
+        return "."+str(current)+"."
+    
+def rampDown(current,goal):
+    if(current <= goal):
+        return "."+str(goal)+"."
+    else:
+        current -= ramp
+        return "."+str(current)+"."
+
+
 
 xbee_port = serial.Serial(port, baud_rate)
-xbee = XBee(xbee_port)
+xbee = ZigBee(xbee_port)
 
-# def read(num_char = 1):
-#     string = xbee_port.read(num_char)
-#     return string.decode('ascii')
+def read(num_char = 1):
+    string = xbee_port.read(num_char)
+    return string.decode('ascii')
 
-# def send(angle):
-#     command = str.encode(angle+"\n")
-#     #command = f"{angle}\n"  # Append newline character to the command
-#     xbee_port.write(command)
+def send(angle):
+    command = str.encode(angle+"\n")
+    #command = f"{angle}\n"  # Append newline character to the command
+    xbee_port.write(command)
 
-# def xbeeSend(message):
-#     destination_address = b'\x13\xA2\x00\x40\xD4\xF0\xA1'
-#     try:
-#         xbee.tx(dest_addr=destination_address, data=message)
-#         print("Message sent successfully.")
-#     except:
-#         print("Error sending message")
+def xbeeSend(message):
+    destination_address = b'\xFF\xFE'
+    #try:
+    xbee.tx(dest_addr=destination_address, data=message)
+    print("Message sent successfully.")
+   # except:
+        #print("Error sending message")
 
 
 def findObject(outputs, img):
-    global up, down
+    global up, down, current
     hT, wT, cT = img.shape
     bbox = []
     classIds = []
     confs = []
 
     # misc
-    message = "1000"
-    destination_address = b'\x13\xA2\x00\x40\xD4\xF0\xA1'
-    #destination_address = b'\x13\xA2\x00\x40\xD4\xF0\x60'
-    try:
-        xbee.tx(dest_addr=destination_address, data=message)
-        print("Message sent successfully.")
-    except:
-        print("Error sending message")
+    # message = "1000"
+    # destination_address = b'\x13\xA2\x00\x40\xD4\xF0\xA1'
+    # #destination_address = b'\x13\xA2\x00\x40\xD4\xF0\x60'
+    # try:
+    #     xbee.tx(dest_addr=destination_address, data=message)
+    #     print("Message sent successfully.")
+    # except:
+    #     print("Error sending message")
+
     for output in outputs:
         for det in output:
             scores = det[5:]
             classId = np.argmax(scores)
             confidence = scores[classId]
-            if classId == carClassId and confidence > confThreshold:
+            if classId == Object and confidence > confThreshold:
                 w, h = int(det[2] * wT), int(det[3] * hT)
                 x, y = int((det[0] * wT) - w / 2), int((det[1] * hT) - h / 2)
                 bbox.append([x, y, w, h])
                 classIds.append(classId)
                 confs.append(float(confidence))
-            else:
-                #xbeeSend("1000")
-                message = "1000"
-                destination_address = b'\x13\xA2\x00\x40\xD4\xF0\xA1'
+            #else:
+                #xbeeSend(".1000.")
+                # message = "1000"
+                #destination_address = b'\x00\x13\xA2\x00\x40\xD4\xF0\xA1'
+                # destination_address = b'\xFF\xFE'
                 #destination_address = b'\x13\xA2\x00\x40\xD4\xF0\x60'
-                try:
-                    xbee.tx(dest_addr=destination_address, data=message)
-                    print("Message sent successfully.")
-                except:
-                    print("Error sending message")
-                #time.sleep(1)
+                #try:
+                #time.sleep(.1)
+                # xbee.send('tx',dest_addr=destination_address, data=message)
+                # print("Message sent successfully.")
+                #except:
+                    #print("Error sending message")
+             
                 # try:
                 #     printer = xbee_port.readline().decode('ascii')
                 # except:
@@ -110,8 +135,18 @@ def findObject(outputs, img):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
         cv2.circle(img, (center_x, center_y), 10, (0, 255, 0), -1)  # Draw a dot at the center of the bounding box
         if center_y > y1:
-            print("Up")
-            #xbeeSend("1025") 
+            print("Go Up")
+            message = rampUp(current, 1100)
+            current+=ramp
+            print(message)
+            xbeeSend(message)  
+            xbeeSend(message) 
+            xbeeSend(message) 
+            xbeeSend(message) 
+            xbeeSend(message) 
+            xbeeSend(message) 
+            xbeeSend(message) 
+            xbeeSend(message) 
             #send("1010")  #send or left or right
             # try:
             #     printer = xbee_port.readline().decode('ascii')
@@ -119,16 +154,30 @@ def findObject(outputs, img):
             #     printer = "unable to decode"
             # print(printer) 
         elif center_y < y1-400:
-            print("Down")
-            #xbeeSend("1000")  
+            print("Go Down")
+            message = rampDown(current, 1030)
+            current -= ramp
+            print(message)
+            xbeeSend(message)  
+            xbeeSend(message)  
+            xbeeSend(message) 
+            xbeeSend(message) 
+            xbeeSend(message) 
+            xbeeSend(message) 
+            xbeeSend(message) 
+            xbeeSend(message) 
+            xbeeSend(message) 
+
             # try:
             #     printer = xbee_port.readline().decode('ascii')
             # except:
             #     printer = "unable to decode"
             # print(printer)
         else:
-            #xbeeSend("1000")  
+            xbeeSend(".911.")  
             print("Center")
+            current = 1000
+
         
 
     # Draw line 1
@@ -150,10 +199,11 @@ while True:
     outputs = net.forward(outputNames)
     findObject(outputs, im)
     cv2.imshow('Image', im)
+    
     if up and down:
         up = False
         down = False
     if cv2.waitKey(1) == ord('q'):
         break
-
+xbee_port.close()
 cv2.destroyAllWindows()
