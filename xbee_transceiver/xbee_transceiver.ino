@@ -28,13 +28,13 @@ void loop() {
   readMessage();
 
   // Wait for a moment before sending the next message
-  // delay(200);
+  delay(200);
 }
 
 void handshake(String throttle) {
   String ackString = "t:";
   ackString += throttle;
-  String receivedString = "";
+  String receivedString = ""; 
   // while (receivedString.indexOf(ackString) == -1) {
   for (int i = 0; i < 100; i++) {
     // Serial.print("INDEX: ");
@@ -88,7 +88,7 @@ void readMessage() {
     receivedString += data;
   }
 
-  Serial.print("Reading message: ");
+  Serial.println("Reading message: ");
   Serial.println(receivedString);
 }
 
