@@ -27,8 +27,6 @@ net = cv2.dnn.readNetFromDarknet(modelConfig, modelWeights)
 net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
 net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
-up = False
-down = False
 x1, y1 = 0, 500
 x2, y2 = 800, 500
 current  = 1000
@@ -178,31 +176,20 @@ def findObject(outputs, img):
             print("Center")
             current = 1000
 
-        
-
-    # Draw line 1
     cv2.line(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-    # Draw line 2
     cv2.line(img, (x1, y1-400), (x2, y2-400), (0, 0, 255), 2)
 
 
 while True:
-    img_resp = urllib.request.urlopen(url)
-    imgnp = np.array(bytearray(img_resp.read()), dtype=np.uint8)
-    im = cv2.imdecode(imgnp, -1)
+    image = urllib.request.urlopen(url)
+    cvImage = cv2.imdecode(np.array(bytearray(image.read()), dtype=np.uint8), -1)
     success, img = cap.read()
-    blob = cv2.dnn.blobFromImage(im, 1 / 255, (whT, whT), [0, 0, 0], 1, crop=False)
+    blob = cv2.dnn.blobFromImage(cvImage, 1 / 255, (whT, whT), [0, 0, 0], 1, crop=False)
     net.setInput(blob)
     layerNames = net.getLayerNames()
-    outputNames = [layerNames[i - 1] for i in net.getUnconnectedOutLayers()]
-    outputs = net.forward(outputNames)
-    findObject(outputs, im)
-    cv2.imshow('Image', im)
-    
-    if up and down:
-        up = False
-        down = False
+    outputs = net.forward([layerNames[i - 1] for i in net.getUnconnectedOutLayers()])
+    findObject(outputs, cvImage)
+    cv2.imshow('Image', cvImage)
     if cv2.waitKey(1) == ord('q'):
         break
 xbee_port.close()
